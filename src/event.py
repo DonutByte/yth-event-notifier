@@ -26,5 +26,4 @@ class Event:
     def __format__(self, format_spec : str):
         name_format_spec, date_format_spec = format_spec.split('|')
         frmt = fr'[{format(self.date, date_format_spec)}]({self.google_event_gen()}) \-__{self.type_}__ {format(self.name, name_format_spec)}'
-        print(f'{frmt = }')
         return frmt

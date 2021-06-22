@@ -19,7 +19,6 @@ class ExcelWorker:
     def get_this_week_row(self):
         today = datetime.date.today()
         sunday = today - datetime.timedelta(today.weekday() + 1)
-        print(f'date looking for {sunday}')
         for cells in self.worksheet.iter_rows(max_col=column_index_from_string(self.DATE_COLUMN),
                                               min_col=column_index_from_string(self.DATE_COLUMN),
                                               min_row=3):
