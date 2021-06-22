@@ -1,4 +1,5 @@
 import telegram
+from telegram import ParseMode
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class Bot(Updater):
+    DETAILS = ""
     def __init__(self, bot_token: str, user_info_filepath: str, excel_handler: ExcelWorker, use_context=False,
                  update_interval: Union[list, None] = None):
 
@@ -99,11 +101,13 @@ class Bot(Updater):
                 return
 
             # update days
-            self.users[update.effective_user.id]['days'] = weeks * 7
+            self.users[str(update.effective_user.id)]['days'] = weeks * 7
             update.message.reply_text(f'החל משבוע הבא, תקבל עדכון ל{weeks} שבוע/ות הבא/ים')
 
         except (IndexError, ValueError):
-            update.message.reply_text('שימוש: /notice <מספר שבועות>')
+            update.message.reply_text(
+                f'אתה מקבל התראה של *__{self.users[str(update.effective_user.id)]["days"] // 7} שבועות__*\n'
+                r'כדי לשנות: /notice \<מספר שבועות\>', parse_mode=ParseMode.MARKDOWN_V2)
 
     def grade_callback(self, update: Update, context: CallbackContext):
         query = update.callback_query
@@ -134,13 +138,15 @@ class Bot(Updater):
 
     def get_schedule(self, context: CallbackContext) -> None:
         schedule: dict[int, list[Event]] = self.excel_handler.get_schedule(self.update_interval)
-
         for user in self.users:
             if 'days' not in self.users[user]:
                 continue
 
             context.bot.send_message(chat_id=user,
-                                     text=f"{schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]}")
+                                     text="\n".join(f"{event: <10|%x}" for events in
+                                                    schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
+                                                    for event in events),
+                                     parse_mode=ParseMode.MARKDOWN_V2)
 
     def help(self, update: Update, _: CallbackContext):
         update.message.reply_text(HELP_MSG)
