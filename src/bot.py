@@ -104,6 +104,7 @@ class Bot(Updater):
         else:
             del self.users[str(update.effective_user.id)]
             update.message.reply_text('😔 לא תקבל עוד עדכונים...\nאם תתחרט אני פה 😃')
+            self.save_user_info()
 
     def get_grade(self, update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=update.effective_chat.id,
