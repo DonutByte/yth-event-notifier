@@ -33,6 +33,7 @@ class Bot(Updater):
             self.update_interval = update_interval
 
         super().__init__(bot_token, use_context=use_context)
+        self.save_users_filepath = user_info_filepath
         self.users = self.get_user_info(user_info_filepath)
         self.excel_handler = excel_handler
 
@@ -43,7 +44,6 @@ class Bot(Updater):
         self.add_handler(CallbackQueryHandler(self.grade_callback, pattern=r"^\d{1,2}$"))
         self.add_handler(CallbackQueryHandler(self.week_callback, pattern=r"^\d\ddays$"))
         self.add_task(self.get_schedule, interval=30)
-
 
     def add_handler(self, handler):
         self.dispatcher.add_handler(handler)
@@ -59,6 +59,10 @@ class Bot(Updater):
     def get_user_info(filepath) -> dict[int, dict]:
         with open(filepath) as f:
             return json.load(f)
+
+    def save_user_info(self):
+        with open(self.save_users_filepath, 'w') as f:
+            json.dump(self.users, f)
 
     def start(self, update: Update, context: CallbackContext):
         # check if it's not the first login
@@ -125,6 +129,7 @@ class Bot(Updater):
 
         # store user data
         self.users[update.effective_user.id] = context.user_data
+        self.save_user_info()
         self.get_schedule(context.bot)
 
     def get_schedule(self, context: CallbackContext) -> None:
