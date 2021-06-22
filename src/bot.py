@@ -23,7 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 class Bot(Updater):
-    DETAILS = ""
+    DETAILS = "\n💡 לחיצה על התאריך תשלח אותכם ליומן גוגל\n" \
+              "ללוח מבחנים המלא: [https://docs\.google.com/spreadsheets/d/13ltt-Kp7BtnSfmaQECrIwSSjcP7x4OrfP85tse9C2sM/edit#gid=1102623273](לחץ כאן)"
+    MAX_WEEK = 3
+    MIN_WEEK = 1
+    HELP_MSG = """הנה הדברים שאני יודע  לעשות:
+    א. /start - להצטרף לקבלת ההתראות
+    ב. /notice - תשנה או תזכיר לכם את זמן ההתראה שלכם
+    ג. /stop -  יעצור את הבוט מלשלוח לכם התראות, כדי לקבל שוב עליכם להתצטרף שוב (ראו א.)
+    ד. /help - ההודעה הזו"""
+
     def __init__(self, bot_token: str, user_info_filepath: str, excel_handler: ExcelWorker, use_context=False,
                  update_interval: Union[list, None] = None):
 
@@ -40,11 +49,13 @@ class Bot(Updater):
         self.excel_handler = excel_handler
 
         self.add_handler(CommandHandler('start', self.start))
-        self.add_handler(CommandHandler('help', help))
+        self.add_handler(CommandHandler('help', self.help))
         self.add_handler(CommandHandler('grade', self.get_grade))
         self.add_handler(CommandHandler('notice', self.set_week))
         self.add_handler(CallbackQueryHandler(self.grade_callback, pattern=r"^\d{1,2}$"))
         self.add_handler(CallbackQueryHandler(self.week_callback, pattern=r"^\d\ddays$"))
+        self.add_handler(CommandHandler('stop', self.stop_updating_me))
+
         self.add_task(self.get_schedule, interval=30)
 
     def add_handler(self, handler):
@@ -58,7 +69,7 @@ class Bot(Updater):
         self.idle()
 
     @staticmethod
-    def get_user_info(filepath) -> dict[int, dict]:
+    def get_user_info(filepath) -> dict[str, dict]:
         with open(filepath) as f:
             return json.load(f)
 
@@ -68,7 +79,7 @@ class Bot(Updater):
 
     def start(self, update: Update, context: CallbackContext):
         # check if it's not the first login
-        if update.effective_user.id in self.users:
+        if str(update.effective_user.id) in self.users:
             update.message.reply_text('אתה כבר רשום במערכת, אם אתה רוצה לשנות את זמן ההתראה תשלח השתמש בפקודה /notice')
             return
 
@@ -84,6 +95,15 @@ class Bot(Updater):
         reply_markup = InlineKeyboardMarkup(keyboard)
         context.bot.send_message(chat_id=update.effective_chat.id, text=f"שלום {user.first_name}, באיזה כיתה אתה?",
                                  reply_markup=reply_markup)
+
+    def stop_updating_me(self, update: Update, context: CallbackContext):
+        if str(update.effective_user.id) not in self.users:
+            update.message.reply_text('עליך קודם להירשם')
+            self.start(update, context)
+
+        else:
+            del self.users[str(update.effective_user.id)]
+            update.message.reply_text('😔 לא תקבל עוד עדכונים...\nאם תתחרט אני פה 😃')
 
     def get_grade(self, update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=update.effective_chat.id,
@@ -106,7 +126,7 @@ class Bot(Updater):
 
         except (IndexError, ValueError):
             update.message.reply_text(
-                f'אתה מקבל התראה של *__{self.users[str(update.effective_user.id)]["days"] // 7} שבועות__*\n'
+                f'אתה מקבל התראה של *__{self.users[str(update.effective_user.id)]["days"] // 7} שבוע/ות__*\n'
                 r'כדי לשנות: /notice \<מספר שבועות\>', parse_mode=ParseMode.MARKDOWN_V2)
 
     def grade_callback(self, update: Update, context: CallbackContext):
@@ -115,11 +135,8 @@ class Bot(Updater):
         context.user_data['grade'] = int(grade)
         logger.info(f'{update.effective_user.first_name} is grade {grade}')
 
-        keyboard = [
-            [InlineKeyboardButton('שבוע לפני', callback_data='07days')],
-            [InlineKeyboardButton('שבועיים לפני', callback_data='14days')],
-            [InlineKeyboardButton('שלושה שבועות לפני', callback_data='21days')],
-        ]
+        keyboard = [[InlineKeyboardButton(f'{i} שבוע/ות לפני', callback_data=f'{i * 7:02}days')] for i in
+                    range(self.MIN_WEEK, self.MAX_WEEK + 1)]
         query.edit_message_text("טיל🚀,כמה שבועות לפני תרצה התראה?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     def week_callback(self, update: Update, context: CallbackContext):
@@ -132,7 +149,7 @@ class Bot(Updater):
         query.edit_message_text('🔥🔥🔥, הכל מוכן!')
 
         # store user data
-        self.users[update.effective_user.id] = context.user_data
+        self.users[str(update.effective_user.id)] = context.user_data
         self.save_user_info()
         self.get_schedule(context.bot)
 
@@ -149,4 +166,4 @@ class Bot(Updater):
                                      parse_mode=ParseMode.MARKDOWN_V2)
 
     def help(self, update: Update, _: CallbackContext):
-        update.message.reply_text(HELP_MSG)
+        update.message.reply_text(self.HELP_MSG)
