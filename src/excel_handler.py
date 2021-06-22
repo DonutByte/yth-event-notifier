@@ -45,13 +45,13 @@ class ExcelWorker:
                     continue
                 date = self.worksheet[f'{self.DATE_COLUMN}{cell.row}'].value.date()
                 if cell.value.startswith('מתכ.'):
-                    events.append(Event(cell.value[4:].strip(" "), date))
+                    events.append(Event(cell.value[4:].strip(" "), "מתכונת", date))
                 elif cell.fill.start_color.index == self.BAGROT_COLOR:
-                    events.append(Event(cell.value.strip(" "), date))
+                    events.append(Event(cell.value.strip(" "), "בגרות",date))
                 elif cell.fill.start_color.index == self.INSIDE_BAGROUT_COLOR:
-                    events.append(Event(cell.value.strip(" "), date))
+                    events.append(Event(cell.value.strip(" "), "בגרות פנימית",date))
                 else:
-                    events.append(Event(cell.value.strip(" "), date))
+                    events.append(Event(cell.value.strip(" "), "",date))
 
         return events
 
