@@ -3,18 +3,26 @@ import openpyxl.cell
 from openpyxl.utils.cell import column_index_from_string
 import datetime
 from event import Event
-
+import requests
+from creds import DOWNLOAD_URL
 
 class ExcelWorker:
     GRADES = {9: ('I', 'K'), 10: ('O', 'Q'), 11: ('U', 'W'), 13: ('Z', 'AB')}
     BAGROT_COLOR = 'FF0000FF'
-    INSIDE_BAGROUT_COLOR = 'FF3D85C6'
+    INSIDE_BAGROT_COLOR = 'FF3D85C6'
     DATE_COLUMN = 'F'
 
     def __init__(self, workbook_path: str):
-        self.workbook = load_workbook(workbook_path, read_only=True)
+        self.workbook_path = workbook_path
+        self.workbook = load_workbook(self.workbook_path, read_only=True)
         self.worksheet = self.workbook.active
-        self.schedule: dict[int, list[Event]] = dict()
+        self.schedule: dict[int, list[list[Event]]] = dict()
+        self.update_schedule([0, 7, 14])
+        self.expire_date: datetime.date = datetime.date.today()
+
+    def open_worksheet(self):
+        self.workbook = load_workbook(self.workbook_path, read_only=True)
+        self.worksheet = self.workbook.active
 
     def get_this_week_row(self):
         today = datetime.date.today()
@@ -46,22 +54,37 @@ class ExcelWorker:
                 if cell.value.startswith('מתכ.'):
                     events.append(Event(cell.value[4:].strip(" "), "מתכונת", date))
                 elif cell.fill.start_color.index == self.BAGROT_COLOR:
-                    events.append(Event(cell.value.strip(" "), "בגרות",date))
-                elif cell.fill.start_color.index == self.INSIDE_BAGROUT_COLOR:
-                    events.append(Event(cell.value.strip(" "), "בגרות פנימית",date))
+                    events.append(Event(cell.value.strip(" "), "בגרות", date))
+                elif cell.fill.start_color.index == self.INSIDE_BAGROT_COLOR:
+                    events.append(Event(cell.value.strip(" "), "בגרות פנימית", date))
                 else:
-                    events.append(Event(cell.value.strip(" "), "",date))
+                    events.append(Event(cell.value.strip(" "), "", date))
 
         return events
 
     def update_schedule(self, intervals: list[int]):
-        row = self.get_this_week_row() + 7
+        # get the most up-to-date version of the excel
+        self.workbook.close()
+        file = requests.get(DOWNLOAD_URL)
+
+        with open(self.workbook_path, 'wb') as excel_file:
+            excel_file.write(file.content)
+
+        self.open_worksheet()   # refresh the worksheet
+
+        row = self.get_this_week_row() + 7  # start from next week
         for grade in self.GRADES:
             self.schedule[grade] = []
         for grade in self.GRADES:
             for week_interval in intervals:
                 self.schedule[grade].append(self.get_week_events(row + week_interval, grade))
 
-    def get_schedule(self, intervals: list[int]) -> dict[int, list[Event]]:
+        self.expire_date = datetime.date.today() + datetime.timedelta(days=intervals[-1])
+
+    def get_schedule(self, intervals: list[int]) -> dict[int, list[list[Event]]]:
+        # before updating check if schedule's last date
+        # hasn't expired
+        if self.expire_date >= datetime.date.today():
+            return self.schedule
         self.update_schedule(intervals)
         return self.schedule
