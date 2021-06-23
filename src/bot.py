@@ -1,4 +1,3 @@
-import telegram
 from telegram import ParseMode
 from telegram.ext import (
     Updater,
@@ -10,6 +9,7 @@ from telegram.ext import (
     CallbackContext,
 )
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from apscheduler.schedulers.background import BackgroundScheduler
 from excel_handler import ExcelWorker
 from event import Event
 from typing import Union
@@ -52,11 +52,17 @@ class Bot(Updater):
         self.add_handler(CommandHandler('help', self.help))
         self.add_handler(CommandHandler('grade', self.get_grade))
         self.add_handler(CommandHandler('notice', self.set_week))
+        self.add_handler(CommandHandler('stop', self.stop_updating_me))
+        self.add_handler(CommandHandler('update', self.update_one))
+
         self.add_handler(CallbackQueryHandler(self.grade_callback, pattern=r"^\d{1,2}$"))
         self.add_handler(CallbackQueryHandler(self.week_callback, pattern=r"^\d\ddays$"))
-        self.add_handler(CommandHandler('stop', self.stop_updating_me))
 
-        self.add_task(self.get_schedule, interval=30)
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(lambda: self.update_all(self.bot), trigger='cron', day_of_week='wed', hour='07', minute='00')
+        scheduler.start()
+
+        # self.add_task(self.update_all, interval=30)
 
     def add_handler(self, handler):
         self.dispatcher.add_handler(handler)
@@ -152,19 +158,32 @@ class Bot(Updater):
         # store user data
         self.users[str(update.effective_user.id)] = context.user_data
         self.save_user_info()
-        self.get_schedule(context.bot)
+        self.update_all(context.bot)
 
-    def get_schedule(self, context: CallbackContext) -> None:
-        schedule: dict[int, list[Event]] = self.excel_handler.get_schedule(self.update_interval)
+    def update_all(self, context) -> None:
+        print(f'Updating users: {self.users}')
+        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+        print(f'{schedule}')
         for user in self.users:
             if 'days' not in self.users[user]:
                 continue
 
-            context.bot.send_message(chat_id=user,
+            context.send_message(chat_id=user,
                                      text="\n".join(f"{event: <10|%x}" for events in
                                                     schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
                                                     for event in events),
                                      parse_mode=ParseMode.MARKDOWN_V2)
+
+    def update_one(self, update: Update, context: CallbackContext):
+        user = str(update.effective_user.id)
+        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+
+        context.bot.send_message(chat_id=user,
+                                 text="\n".join(f"{event: <10|%x}" for events in
+                                                schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
+                                                for event in events),
+                                 parse_mode=ParseMode.MARKDOWN_V2)
+
 
     def help(self, update: Update, _: CallbackContext):
         update.message.reply_text(self.HELP_MSG)
