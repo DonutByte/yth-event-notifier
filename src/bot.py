@@ -30,8 +30,9 @@ class Bot(Updater):
     HELP_MSG = """הנה הדברים שאני יודע  לעשות:
     א. /start - להצטרף לקבלת ההתראות
     ב. /notice - תשנה או תזכיר לכם את זמן ההתראה שלכם
-    ג. /stop -  יעצור את הבוט מלשלוח לכם התראות, כדי לקבל שוב עליכם להתצטרף שוב (ראו א.)
-    ד. /help - ההודעה הזו"""
+    ג. /stop -  יעצור את הבוט מלשלוח לכם התראות, כדי לקבל שוב עליכם לשנות את זמן ההתראה (ראו ב.)
+    ד. /update - שולח עדכון עכשיו (גם אם לא נרשמת לעדכון האוטומטי)
+    ה. /help - ההודעה הזו"""
 
     def __init__(self, bot_token: str, user_info_filepath: str, excel_handler: ExcelWorker, use_context=False,
                  update_interval: Union[list, None] = None):
@@ -56,7 +57,7 @@ class Bot(Updater):
         self.add_handler(CommandHandler('update', self.update_one))
 
         self.add_handler(CallbackQueryHandler(self.grade_callback, pattern=r"^\d{1,2}$"))
-        self.add_handler(CallbackQueryHandler(self.week_callback, pattern=r"^\d\ddays$"))
+        self.add_handler(CallbackQueryHandler(self.week_callback, pattern=r"^(\d\ddays|no-update)$"))
 
         scheduler = BackgroundScheduler()
         scheduler.add_job(lambda: self.update_all(self.bot), trigger='cron', day_of_week='wed', hour='07', minute='00')
@@ -108,8 +109,9 @@ class Bot(Updater):
             self.start(update, context)
 
         else:
-            del self.users[str(update.effective_user.id)]
-            update.message.reply_text('😔 לא תקבל עוד עדכונים...\nאם תתחרט אני פה 😃')
+            self.users[str(update.effective_user.id)]['wantsUpdate'] = False
+            update.message.reply_text('😔 לא תקבל עוד עדכונים אוטומטים, עם זאת תמיד תוכל לבקש עם /update...\n'
+                                      'אם תתחרט אני פה 😃')
             self.save_user_info()
 
     def get_grade(self, update: Update, context: CallbackContext):
@@ -117,7 +119,8 @@ class Bot(Updater):
                                  text=f'אתה בכיתה {context.user_data.get("grade", "0")}')
 
     def set_week(self, update: Update, context: CallbackContext):
-        if str(update.effective_user.id) not in self.users:
+        user = str(update.effective_user.id)
+        if user not in self.users:
             self.start(update, context)
             return
         try:
@@ -128,13 +131,19 @@ class Bot(Updater):
                 return
 
             # update days
-            self.users[str(update.effective_user.id)]['days'] = weeks * 7
+            self.users[user]['wantsUpdate'] = True
+            self.users[user]['days'] = weeks * 7
             update.message.reply_text(f'החל משבוע הבא, תקבל עדכון ל{weeks} שבוע/ות הבא/ים')
+            self.save_user_info()
 
         except (IndexError, ValueError):
-            update.message.reply_text(
-                f'אתה מקבל התראה של *__{self.users[str(update.effective_user.id)]["days"] // 7} שבוע/ות__*\n'
-                r'כדי לשנות: /notice \<מספר שבועות\>', parse_mode=ParseMode.MARKDOWN_V2)
+            if self.users[user]["wantsUpdate"]:
+                update.message.reply_text(
+                    f'אתה מקבל התראה של *__{self.users[user]["days"] // 7} שבוע/ות__*\n'
+                    r'כדי לשנות: /notice \<מספר שבועות\>', parse_mode=ParseMode.MARKDOWN_V2)
+            else:
+                update.message.reply_text("**אינך מקבל התרעות אוטומטיות**\n"
+                                          r"כדי לקבל: /notice \<מספר שבועות\>", parse_mode=ParseMode.MARKDOWN_V2)
 
     def grade_callback(self, update: Update, context: CallbackContext):
         query = update.callback_query
@@ -144,46 +153,63 @@ class Bot(Updater):
 
         keyboard = [[InlineKeyboardButton(f'{i} שבוע/ות לפני', callback_data=f'{i * 7:02}days')] for i in
                     range(self.MIN_WEEK, self.MAX_WEEK + 1)]
+        keyboard.append([InlineKeyboardButton(f'לא ארצה עדכונים כל שבוע', callback_data='no-update')])
         query.edit_message_text("טיל🚀,כמה שבועות לפני תרצה התראה?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     def week_callback(self, update: Update, context: CallbackContext):
         query = update.callback_query
-        days = query.data[:2]
-        context.user_data['days'] = int(days)
 
-        logger.info(f'{update.effective_user.full_name} wants a {days} day notice!')
+        if query == 'no-update':
+            context.user_data['days'] = -1
+            context.user_data['wantsUpdate'] = False
 
-        query.edit_message_text('🔥🔥🔥, הכל מוכן!')
+            logger.info(f'{update.effective_user.full_name} wants no notice!')
+
+            query.edit_message_text('🔥🔥🔥, לא תקבל עדכונים שבועיים אך תמיד תוכל לבקש ידנית: /update')
+
+        else:
+            days = query.data[:2]
+            context.user_data['days'] = int(days)
+            context.user_data['wantsUpdate'] = True
+
+            logger.info(f'{update.effective_user.full_name} wants a {days} day notice!')
+
+            query.edit_message_text('🔥🔥🔥, הכל מוכן!')
 
         # store user data
         self.users[str(update.effective_user.id)] = context.user_data
         self.save_user_info()
-        self.update_all(context.bot)
 
     def update_all(self, context) -> None:
         print(f'Updating users: {self.users}')
         schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
         print(f'{schedule}')
         for user in self.users:
-            if 'days' not in self.users[user]:
+            if 'days' not in self.users[user]:  # user hasn't signed up
+                continue
+            if not self.users[user]['wantsUpdate']:
                 continue
 
             context.send_message(chat_id=user,
-                                     text="\n".join(f"{event: <10|%x}" for events in
-                                                    schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
-                                                    for event in events),
-                                     parse_mode=ParseMode.MARKDOWN_V2)
-
-    def update_one(self, update: Update, context: CallbackContext):
-        user = str(update.effective_user.id)
-        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
-
-        context.bot.send_message(chat_id=user,
                                  text="\n".join(f"{event: <10|%x}" for events in
                                                 schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
                                                 for event in events),
                                  parse_mode=ParseMode.MARKDOWN_V2)
 
+    def update_one(self, update: Update, context: CallbackContext):
+        user = str(update.effective_user.id)
+        print(context.user_data)
+        if 'days' not in self.users[user]:  # user hasn't signed up
+            update.message.reply_text('עליך קודם להירשם')
+            self.start(update, context)
+
+        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+
+        update.message.reply_text(
+            text="\n".join(f"{event: <10|%x}" for events in
+                           schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
+                           for event in events),
+            parse_mode=ParseMode.MARKDOWN_V2)
 
     def help(self, update: Update, _: CallbackContext):
         update.message.reply_text(self.HELP_MSG)
