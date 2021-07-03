@@ -1,12 +1,12 @@
-from telegram import ParseMode
+from telegram import ParseMode, ForceReply, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Updater,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
-    Filters,
-    ConversationHandler,
     CallbackContext,
+    ConversationHandler,
+    Filters,
+    MessageHandler,
 )
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,18 +15,25 @@ from event import Event
 from typing import Union
 import logging
 import json
+from creds import EXCEL_URL
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
+START, GRADE, WEEK = range(3)
+
 
 class Bot(Updater):
-    DETAILS = "\n💡 לחיצה על התאריך תשלח אותכם ליומן גוגל\n" \
-              "ללוח מבחנים המלא: [https://docs\.google.com/spreadsheets/d/13ltt-Kp7BtnSfmaQECrIwSSjcP7x4OrfP85tse9C2sM/edit#gid=1102623273](לחץ כאן)"
     MAX_WEEK = 3
     MIN_WEEK = 1
+    GRADES = {'ט': 9, 'י': 10, 'יא': 11, 'יב': 12,
+              "ט'": 9, "י'": 10, "יא'": 11, "יב'": 12}
+    GRADES_KEYBOARD = [["ט'"], ["י'"], ["יא'"], ["יב'"]]
+    WEEKS_KEYBOARD = [[f'{i} שבוע/ות'] for i in range(MIN_WEEK, MAX_WEEK + 1)] + [['לא ארצה עדכון אוטומטי']]
+    DETAILS = "\n\n💡 לחיצה על התאריך תשלח אותכם ליומן גוגל\n" \
+              rf"ללוח מבחנים המלא: [לחץ כאן]({EXCEL_URL})"
     HELP_MSG = """הנה הדברים שאני יודע  לעשות:
     א. /start - להצטרף לקבלת ההתראות
     ב. /notice - תשנה או תזכיר לכם את זמן ההתראה שלכם
@@ -48,10 +55,45 @@ class Bot(Updater):
         self.users = self.get_user_info(user_info_filepath)
         self.excel_handler = excel_handler
 
-        self.add_handler(CommandHandler('start', self.start))
+        setup_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', self.start)],
+            states={
+                START: [CommandHandler('start', self.start)],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade)],
+                WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות') ^ Filters.regex('^לא ארצה עדכון אוטומטי$'), self.week)],
+            },
+            fallbacks=[CommandHandler('cancel', self.start)],
+        )
+
+        change_grade_handler = ConversationHandler(
+            entry_points=[CommandHandler('grade', self.change_grade),
+                          MessageHandler(Filters.regex('שנה כיתה'), self.change_grade)],
+            states={
+                START: [CommandHandler('grade', self.change_grade)],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade_callback)],
+            },
+            fallbacks=[CommandHandler('cancel', self.cancel) , setup_handler,
+                       CommandHandler('help', self.help), CommandHandler('stop', self.stop_updating_me),
+                       CommandHandler('update', self.update_one)]
+        )
+
+        change_notice_handler = ConversationHandler(
+            entry_points=[CommandHandler('notice', self.change_week),
+                          MessageHandler(Filters.regex('שנה התראה'), self.change_week)],
+            states={
+                START: [CommandHandler('notice', self.change_week),
+                        MessageHandler(Filters.regex('שנה התראה'), self.change_week)],
+                WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות'), self.week)],
+            },
+            fallbacks=[CommandHandler('cancel', self.cancel), setup_handler, change_grade_handler,
+                       CommandHandler('help', self.help), CommandHandler('stop', self.stop_updating_me),
+                       CommandHandler('update', self.update_one)]
+        )
+
+        self.add_handler(setup_handler)
+        self.add_handler(change_grade_handler)
+        self.add_handler(change_notice_handler)
         self.add_handler(CommandHandler('help', self.help))
-        self.add_handler(CommandHandler('grade', self.get_grade))
-        self.add_handler(CommandHandler('notice', self.set_week))
         self.add_handler(CommandHandler('stop', self.stop_updating_me))
         self.add_handler(CommandHandler('update', self.update_one))
 
@@ -92,15 +134,10 @@ class Bot(Updater):
         user = update.message.from_user
         logger.info("User %s started the conversation.", user.first_name)
 
-        keyboard = [
-            [InlineKeyboardButton("ט'", callback_data='9')],
-            [InlineKeyboardButton("י'", callback_data='10')],
-            [InlineKeyboardButton("יא'", callback_data='11')],
-            [InlineKeyboardButton("יב'", callback_data='11')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         context.bot.send_message(chat_id=update.effective_chat.id, text=f"שלום {user.first_name}, באיזה כיתה אתה?",
-                                 reply_markup=reply_markup)
+                                 reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD, one_time_keyboard=True,
+                                                                  input_field_placeholder='באיתה כיתה אתה?'))
+        return GRADE
 
     def stop_updating_me(self, update: Update, context: CallbackContext):
         if str(update.effective_user.id) not in self.users:
@@ -112,39 +149,105 @@ class Bot(Updater):
             update.message.reply_text('😔 לא תקבל עוד עדכונים...\nאם תתחרט אני פה 😃')
             self.save_user_info()
 
-    def get_grade(self, update: Update, context: CallbackContext):
-        context.bot.send_message(chat_id=update.effective_chat.id,
-                                 text=f'אתה בכיתה {context.user_data.get("grade", "0")}')
+    def grade(self, update: Update, context: CallbackContext):
+        result = self.grade_callback(update, context)
+        if result == GRADE:
+            return GRADE
+        else:
+            update.message.reply_text(text=f'{update.effective_user.full_name} אתה בכיתה {update.message.text}!'
+                                           f'\nדבר אחרון, כמה שבועות לפני תרצה התראה?',
+                                      reply_markup=ReplyKeyboardMarkup(self.WEEKS_KEYBOARD, one_time_keyboard=True,
+                                                                       input_field_placeholder='כמה שבועות לפני תרצה התראה?'))
+            return WEEK
 
-    def set_week(self, update: Update, context: CallbackContext):
-        if str(update.effective_user.id) not in self.users:
-            self.start(update, context)
-            return
-        try:
+    def week(self, update: Update, context: CallbackContext):
+        user = str(update.effective_user.id)
+        if update.message.text == 'לא ארצה עדכון אוטומטי':
+            context.user_data['days'] = -1
+            context.user_data['wantsUpdate'] = False
+            update.message.reply_text('לא תקבל עדכונים שבועיים אך תמיד תוכל לבקש ידנית: /update',
+                                      reply_markup=ReplyKeyboardRemove())
+            self.users[user] = context.user_data
+            self.save_user_info()
+        else:
 
-            weeks = int(context.args[0])
-            if weeks < 1 or weeks > 3:
-                update.message.reply_text('הזן מספר בין 1 ל3')
-                return
+            try:
+                weeks = int(update.message.text.replace(' שבוע/ות', ''))
+                if weeks < self.MIN_WEEK or weeks > self.MAX_WEEK:
+                    update.message.reply_text(f'הזן מספר בין {self.MIN_WEEK} ל{self.MAX_WEEK}')
+                    return ConversationHandler.END
 
-            # update days
-            self.users[str(update.effective_user.id)]['days'] = weeks * 7
-            update.message.reply_text(f'החל משבוע הבא, תקבל עדכון ל{weeks} שבוע/ות הבא/ים')
+                # update days
+                context.user_data['wantsUpdate'] = True
+                context.user_data['days'] = weeks * 7
 
-        except (IndexError, ValueError):
+                if user in self.users:
+                    self.users[user]['wantsUpdate'] = context.user_data['']
+                    self.users[user]['days'] = context.user_data['days']
+                else:
+                    self.users[user] = context.user_data
+
+                update.message.reply_text(f'החל משבוע הבא, תקבל עדכון ל{weeks} שבוע/ות הבא/ים',
+                                          reply_markup=ReplyKeyboardRemove())
+                self.save_user_info()
+
+            except (IndexError, ValueError):
+                if self.users[user]["wantsUpdate"]:
+                    update.message.reply_text(
+                        f'אתה מקבל התראה של *__{self.users[user]["days"] // 7} שבוע/ות__*\n'
+                        r'כדי לשנות: /notice \<מספר שבועות\>', parse_mode=ParseMode.MARKDOWN_V2)
+                else:
+                    update.message.reply_text("**אינך מקבל התרעות אוטומטיות**\n"
+                                              r"כדי לקבל: /notice \<מספר שבועות\>", parse_mode=ParseMode.MARKDOWN_V2)
+
+        return ConversationHandler.END
+
+    def change_grade(self, update: Update, _: CallbackContext):
+        user = str(update.effective_user.id)
+        if user not in self.users:
+            update.message.reply_text('כדי לשנות כיתה עליך קודם להירשם...')
+            return ConversationHandler.END
+        grade = next((text for text, num in self.GRADES.items() if num == self.users[user]["grade"]), "שלא קיימת")
+        update.message.reply_text(f'אתה __בכיתה {grade}__'
+                                  f'\nאם אתה רוצה לשנות כיתה, בחר את הכיתה החדשה:\n'
+                                  f'אם לא לחץ /cancel',
+                                  parse_mode=ParseMode.MARKDOWN_V2,
+                                  reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD, one_time_keyboard=True,
+                                                                   input_field_placeholder='באיתה כיתה אתה?'))
+        return GRADE
+
+    def change_week(self, update: Update, _: CallbackContext):
+        user = str(update.effective_user.id)
+        if self.users[user]["wantsUpdate"]:
             update.message.reply_text(
-                f'אתה מקבל התראה של *__{self.users[str(update.effective_user.id)]["days"] // 7} שבוע/ות__*\n'
-                r'כדי לשנות: /notice \<מספר שבועות\>', parse_mode=ParseMode.MARKDOWN_V2)
+                f'אתה מקבל התראה של *__{self.users[user]["days"] // 7} שבוע/ות__*\n', parse_mode=ParseMode.MARKDOWN_V2)
+        else:
+            update.message.reply_text("**אינך מקבל התרעות אוטומטיות**\n", parse_mode=ParseMode.MARKDOWN_V2)
+        update.message.reply_text('אם אתה רוצה לשנות בחר אופציה חדשה\nאם לא לחץ /cancel',
+                                  reply_markup=ReplyKeyboardMarkup(self.WEEKS_KEYBOARD, one_time_keyboard=True,
+                                                                   input_field_placeholder='באיתה כיתה אתה?'))
+        return WEEK
+
+    @staticmethod
+    def cancel(update: Update, _: CallbackContext):
+        update.message.reply_text('אני עדיין פה אם תצטרך!', reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
 
     def grade_callback(self, update: Update, context: CallbackContext):
-        query = update.callback_query
-        grade = query.data
-        context.user_data['grade'] = int(grade)
-        logger.info(f'{update.effective_user.first_name} is grade {grade}')
-
-        keyboard = [[InlineKeyboardButton(f'{i} שבוע/ות לפני', callback_data=f'{i * 7:02}days')] for i in
-                    range(self.MIN_WEEK, self.MAX_WEEK + 1)]
-        query.edit_message_text("טיל🚀,כמה שבועות לפני תרצה התראה?", reply_markup=InlineKeyboardMarkup(keyboard))
+        grade = update.message.text
+        try:
+            context.user_data['grade'] = int(self.GRADES[grade])
+        except KeyError:
+            update.message.reply_text(f'הכיתה שבחרת לא קיימת\nבחר אחת מאלו: {", ".join(self.GRADES.keys())}',
+                                      reply_markup=ForceReply())
+            return GRADE
+        else:
+            user = str(update.effective_user.id)
+            if user in self.users:
+                update.message.reply_text('הכיתה שונתה בהצלחה!')
+                self.users[user]['grade'] = context.user_data['grade']
+                self.save_user_info()
+        return ConversationHandler.END
 
     def week_callback(self, update: Update, context: CallbackContext):
         query = update.callback_query
@@ -168,22 +271,24 @@ class Bot(Updater):
             if 'days' not in self.users[user]:
                 continue
 
-            context.send_message(chat_id=user,
+            context.bot.send_message(chat_id=user,
                                      text="\n".join(f"{event: <10|%x}" for events in
                                                     schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
-                                                    for event in events),
-                                     parse_mode=ParseMode.MARKDOWN_V2)
+                                                    for event in events) + self.DETAILS,
+                                     parse_mode=ParseMode.MARKDOWN_V2, disable_web_page_preview=True)
 
     def update_one(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
-        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
-
-        context.bot.send_message(chat_id=user,
-                                 text="\n".join(f"{event: <10|%x}" for events in
-                                                schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
-                                                for event in events),
-                                 parse_mode=ParseMode.MARKDOWN_V2)
-
+        try:
+            schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+        except RuntimeError as e:
+            update.message.reply_text(text=str(e))
+        else:
+            context.bot.send_message(chat_id=user,
+                                     text="\n".join(f"{event: <10|%x}" for events in
+                                                    schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
+                                                    for event in events) + self.DETAILS,
+                                     parse_mode=ParseMode.MARKDOWN_V2, disable_web_page_preview=True)
 
     def help(self, update: Update, _: CallbackContext):
         update.message.reply_text(self.HELP_MSG)
