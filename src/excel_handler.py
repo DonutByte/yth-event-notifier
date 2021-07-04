@@ -64,13 +64,13 @@ class ExcelWorker:
 
     def update_schedule(self, intervals: list[int]):
         # get the most up-to-date version of the excel
-        self.workbook.close()
-        file = requests.get(DOWNLOAD_URL)
-
-        with open(self.workbook_path, 'wb') as excel_file:
-            excel_file.write(file.content)
-
-        self.open_worksheet()   # refresh the worksheet
+        # self.workbook.close()
+        #
+        # file = requests.get(DOWNLOAD_URL)
+        # with open(self.workbook_path, 'wb') as excel_file:
+        #     excel_file.write(file.content)
+        #
+        # self.open_worksheet()   # refresh the worksheet
 
         row = self.get_this_week_row() + 7  # start from next week
         for grade in self.GRADES:
