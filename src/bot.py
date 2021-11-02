@@ -47,7 +47,7 @@ class Bot(Updater):
     OPTIONS = ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה כיתה', 'שנה אופק התראה'],
                                             ['עצור עדכון אוטומטי', 'שחזר עדכון אוטומטי'], ['▶️התחל', '❓עזרה']])
     RETURN_OPTION = [['🔙חזור']]
-    DETAILS = "\n\n💡 לחיצה על התאריך תשלח אותכם ליומן גוגל\n" \
+    DETAILS = "\n\n💡 לחיצה על התאריך תשלח אתכם ליומן גוגל\n" \
               rf"ללוח מבחנים המלא: <a href='{EXCEL_URL}'>לחץ כאן</a>"
 
     # noinspection PyTypeChecker
@@ -301,21 +301,6 @@ class Bot(Updater):
                 self.users[user]['grade'] = context.user_data['grade']
                 self.save_user_info()
         return ConversationHandler.END
-
-    def week_callback(self, update: Update, context: CallbackContext):
-        query = update.callback_query
-        days = query.data[:2]
-        context.user_data['days'] = int(days)
-
-        logger.info(
-            f'{update.effective_user.full_name} wants a {days} day notice!')
-
-        query.edit_message_text('🔥🔥🔥, הכל מוכן!')
-
-        # store user data
-        self.users[str(update.effective_user.id)] = context.user_data
-        self.save_user_info()
-        self.update_all(context.bot)
 
     @catch_errors
     def update_all(self, bot: telegram.Bot) -> None:
