@@ -15,6 +15,7 @@ from event import Event
 from typing import Union
 import logging
 import json
+import time
 from creds import EXCEL_URL
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -25,25 +26,39 @@ logger = logging.getLogger(__name__)
 START, GRADE, WEEK = range(3)
 
 
+def catch_errors(func):
+    def wrapper(self, *args):
+        try:
+            return func(self, *args)
+        except Exception as e:
+            return func(self, *args)
+    return wrapper
+
+
 class Bot(Updater):
+    WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא', 2: 'עוד שבועיים'}
     MAX_WEEK = 3
     MIN_WEEK = 1
     GRADES = {'ט': 9, 'י': 10, 'יא': 11, 'יב': 12,
               "ט'": 9, "י'": 10, "יא'": 11, "יב'": 12}
     GRADES_KEYBOARD = [["ט'"], ["י'"], ["יא'"], ["יב'"]]
-    WEEKS_KEYBOARD = [[f'{i} שבוע/ות'] for i in range(MIN_WEEK, MAX_WEEK + 1)] + [['לא ארצה עדכון אוטומטי']]
+    WEEKS_KEYBOARD = [[f'{i} שבוע/ות']
+                      for i in range(MIN_WEEK, MAX_WEEK + 1)] + [['לא ארצה עדכון אוטומטי']]
     OPTIONS = ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה כיתה', 'שנה אופק התראה'],
                                             ['עצור עדכון אוטומטי', 'שחזר עדכון אוטומטי'], ['▶️התחל', '❓עזרה']])
     RETURN_OPTION = [['🔙חזור']]
     DETAILS = "\n\n💡 לחיצה על התאריך תשלח אותכם ליומן גוגל\n" \
-              rf"ללוח מבחנים המלא: [לחץ כאן]({EXCEL_URL})"
+              rf"ללוח מבחנים המלא: <a href='{EXCEL_URL}'>לחץ כאן</a>"
 
     # noinspection PyTypeChecker
     def __init__(self, bot_token: str, user_info_filepath: str, excel_handler: ExcelWorker, use_context=False,
                  update_interval: Union[list, None] = None):
 
+        assert len(self.WEEKS_FORMAT) == self.MAX_WEEK, "WEEKS_FORMAT should match the number of WEEKS"
+
         if not (isinstance(update_interval, list) or update_interval is None):
-            raise TypeError(f'update_interval expected: list or None, got: {type(update_interval).__name__}')
+            raise TypeError(
+                f'update_interval expected: list or None, got: {type(update_interval).__name__}')
         if update_interval is None:
             self.update_interval = (0, 7, 14)
         else:
@@ -55,9 +70,12 @@ class Bot(Updater):
         self.excel_handler = excel_handler
 
         # init command handlers
-        start = [CommandHandler('start', self.start), MessageHandler(Filters.regex('^▶️התחל$'), self.start)]
-        help = [CommandHandler('help', self.help), MessageHandler(Filters.regex('^❓עזרה$'), self.help)]
-        update = [CommandHandler('update', self.update_one), MessageHandler(Filters.regex('^עדכן$'), self.update_one)]
+        start = [CommandHandler('start', self.start), MessageHandler(
+            Filters.regex('^▶️התחל$'), self.start)]
+        help = [CommandHandler('help', self.help), MessageHandler(
+            Filters.regex('^❓עזרה$'), self.help)]
+        update = [CommandHandler('update', self.update_one), MessageHandler(
+            Filters.regex('^עדכן$'), self.update_one)]
         grade = [CommandHandler('grade', self.change_grade), MessageHandler(Filters.regex('^שנה כיתה$'),
                                                                             self.change_grade)]
         week = [CommandHandler('notice', self.change_week), MessageHandler(Filters.regex('^שנה אופק התראה$'),
@@ -66,8 +84,8 @@ class Bot(Updater):
                                                                               self.stop_updating_me)]
         restart = [CommandHandler('restart', self.start_updating_me),
                    MessageHandler(Filters.regex('^שחזר עדכון אוטומטי$'), self.start_updating_me)]
-        cancel = [CommandHandler('cancel', self.cancel), MessageHandler(Filters.regex('^🔙חזור$'), self.cancel),
-                  MessageHandler(Filters.all, self.unknown_message)]
+        cancel = [CommandHandler('cancel', self.cancel), MessageHandler(
+            Filters.regex('^🔙חזור$'), self.cancel)]
 
         setup_handler = ConversationHandler(
             entry_points=start,
@@ -107,9 +125,12 @@ class Bot(Updater):
         self.add_handler(restart)
         self.add_handler(update)
 
+        self.add_handler(MessageHandler(Filters.text, self.unknown_message))
+
         # update_all scheduler
         scheduler = BackgroundScheduler()
-        scheduler.add_job(lambda: self.update_all(self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00')
+        scheduler.add_job(lambda: self.update_all(
+            self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00')
         scheduler.start()
 
     def add_handler(self, handler):
@@ -133,7 +154,7 @@ class Bot(Updater):
 
     def save_user_info(self):
         with open(self.save_users_filepath, 'w') as f:
-            json.dump(self.users, f)
+            json.dump(self.users, f, indent=4)
 
     def start(self, update: Update, context: CallbackContext):
         # check if it's not the first login
@@ -157,7 +178,8 @@ class Bot(Updater):
             update.message.reply_text('עליך קודם להירשם!\nלחץ ▶️התחל')
         else:
             self.users[str(update.effective_user.id)]['wantsUpdate'] = False
-            update.message.reply_text("😔 לא תקבל עוד עדכונים...\nאם תתחרט לחץ 'שחזר עדכון אוטומטי'")
+            update.message.reply_text(
+                "😔 לא תקבל עוד עדכונים...\nאם תתחרט לחץ 'שחזר עדכון אוטומטי'")
             self.save_user_info()
 
     def start_updating_me(self, update: Update, _: CallbackContext):
@@ -165,7 +187,8 @@ class Bot(Updater):
             update.message.reply_text('עליך קודם להירשם!\nלחץ ▶️התחל')
         else:
             self.users[str(update.effective_user.id)]['wantsUpdate'] = True
-            update.message.reply_text("משבוע הבא תקבל עדכונים אוטומטים!\nכדי להפסיק לחץ 'עצור עדכון אוטומטי'")
+            update.message.reply_text(
+                "משבוע הבא תקבל עדכונים אוטומטים!\nכדי להפסיק לחץ 'עצור עדכון אוטומטי'")
             self.save_user_info()
 
     def grade(self, update: Update, context: CallbackContext):
@@ -192,7 +215,8 @@ class Bot(Updater):
             try:
                 weeks = int(update.message.text.replace(' שבוע/ות', ''))
                 if weeks < self.MIN_WEEK or weeks > self.MAX_WEEK:
-                    update.message.reply_text(f'הזן מספר בין {self.MIN_WEEK} ל{self.MAX_WEEK}')
+                    update.message.reply_text(
+                        f'הזן מספר בין {self.MIN_WEEK} ל{self.MAX_WEEK}')
                     return WEEK
 
                 # update days
@@ -227,7 +251,8 @@ class Bot(Updater):
         if user not in self.users:
             update.message.reply_text('כדי לשנות כיתה עליך קודם להירשם...')
             return ConversationHandler.END
-        grade = next((text for text, num in self.GRADES.items() if num == self.users[user]["grade"]), "שלא קיימת")
+        grade = next((text for text, num in self.GRADES.items()
+                     if num == self.users[user]["grade"]), "שלא קיימת")
         update.message.reply_text(f'אתה __בכיתה {grade}__'
                                   f'\nאם אתה רוצה לשנות כיתה, בחר את הכיתה החדשה:\n'
                                   f"אם לא לחץ '{self.RETURN_OPTION[0][0]}'",
@@ -250,13 +275,13 @@ class Bot(Updater):
         return WEEK
 
     def cancel(self, update: Update, _: CallbackContext):
-        update.message.reply_text('אני עדיין פה אם תצטרך!', reply_markup=self.OPTIONS)
+        update.message.reply_text(
+            'אני עדיין פה אם תצטרך!', reply_markup=self.OPTIONS)
         return ConversationHandler.END
 
     def unknown_message(self, update: Update, _: CallbackContext):
-        update.message.reply_text(f"לא הבנתי\nבבקשה תשתמש בכפתורים\n"
-                                  f"**לחזרה לתפריט הראשי לחץ '{self.RETURN_OPTION[0][0]}'",
-                                  parse_mode=ParseMode.MARKDOWN_V2)
+        update.message.reply_text(f"לא הבנתי\nבבקשה תשתמש בכפתורים\n",
+                                  parse_mode=ParseMode.MARKDOWN_V2, reply_markup=self.OPTIONS)
 
     def grade_callback(self, update: Update, context: CallbackContext):
         grade = update.message.text
@@ -271,7 +296,8 @@ class Bot(Updater):
         else:
             user = str(update.effective_user.id)
             if user in self.users:
-                update.message.reply_text('הכיתה שונתה בהצלחה!', reply_markup=self.OPTIONS)
+                update.message.reply_text(
+                    'הכיתה שונתה בהצלחה!', reply_markup=self.OPTIONS)
                 self.users[user]['grade'] = context.user_data['grade']
                 self.save_user_info()
         return ConversationHandler.END
@@ -281,7 +307,8 @@ class Bot(Updater):
         days = query.data[:2]
         context.user_data['days'] = int(days)
 
-        logger.info(f'{update.effective_user.full_name} wants a {days} day notice!')
+        logger.info(
+            f'{update.effective_user.full_name} wants a {days} day notice!')
 
         query.edit_message_text('🔥🔥🔥, הכל מוכן!')
 
@@ -290,22 +317,22 @@ class Bot(Updater):
         self.save_user_info()
         self.update_all(context.bot)
 
+    @catch_errors
     def update_all(self, bot: telegram.Bot) -> None:
-        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+        schedule: dict[int, list[list[Event]]
+                       ] = self.excel_handler.get_schedule(self.update_interval)
         for user in self.users:
             if 'days' not in self.users[user] or not self.users[user]['wantsUpdate']:
                 continue
 
-            message = "\n".join(
-                f"{event: <10|%x}" for events in schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
-                for event in events)
-            if len(message) == 0:
-                message = "__אין אירועים__😁"
-            message += self.DETAILS
+            message = self.format_schedule(schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]) \
+                    + self.DETAILS
 
-            bot.send_message(chat_id=user, text=message, parse_mode=ParseMode.MARKDOWN_V2,
+            bot.send_message(chat_id=user, text=message, parse_mode=ParseMode.HTML,
                              disable_web_page_preview=True, reply_markup=self.OPTIONS)
+            time.sleep(1)
 
+    @catch_errors
     def update_one(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
         if user not in self.users:
@@ -313,25 +340,34 @@ class Bot(Updater):
             return
 
         try:
-            schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+            schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(
+                self.update_interval)
         except RuntimeError as e:
             update.message.reply_text(text=str(e))
-        except Exception as e:
-            print(e)
         else:
-            message = "\n".join(
-                f"{event: <10|%x}" for events in schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]
-                for event in events)
+            message = self.format_schedule(schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]) \
+                    + self.DETAILS
 
-            if len(message) == 0:
-                message = "__אין אירועים__😁"
-            message += self.DETAILS
-
-            context.bot.send_message(chat_id=user, text=message, parse_mode=ParseMode.MARKDOWN_V2,
+            context.bot.send_message(chat_id=user, text=message, parse_mode=ParseMode.HTML,
                                      disable_web_page_preview=True, reply_markup=self.OPTIONS)
 
     def help(self, update: Update, _: CallbackContext):
         help_message = ''
         for idx, command in enumerate(_.bot.get_my_commands()):
             help_message += f'{chr(ord("א") + idx)}. /{command.command} - {command.description}\n'
-        update.message.reply_text(help_message, reply_markup=self.OPTIONS)
+        help_message += '\n\n' + 'לשאלות נוספות אנא פנו ל<a href="t.me/Da_Donut">מנהל הבוט</a>'
+        update.message.reply_text(help_message, reply_markup=self.OPTIONS, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+    def format_schedule(self, schedule: list[list[Event]]):
+        msg = ''
+        for i, week in enumerate(schedule):
+            msg += f'<u><b>{self.WEEKS_FORMAT[i]}</b></u>\n'
+
+            # only notice the weeks where there are event
+            if len(week) == 0:
+                msg += "<b>אין אירועים</b>😁"
+
+            for event in week:
+                msg += f'{event: <10|%d/%m/%y}\n'
+            msg +='\n'
+        return msg
