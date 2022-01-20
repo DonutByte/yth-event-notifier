@@ -1,10 +1,12 @@
-from creds import BOT_TOKEN
+from creds import BOT_TOKEN, DEV_TOKEN
 from bot import Bot
-from excel_handler import ExcelWorker
+TEST = False
+
 
 def main():
-    excel = ExcelWorker('../לוח מבחנים.xlsx')
-    bot = Bot(BOT_TOKEN, '../userdata.json', excel, True)
+    excel_path = '../לוח מבחנים.xlsx'
+    bot = Bot(DEV_TOKEN if TEST else BOT_TOKEN,
+              '../userdata.json', excel_path, True)
     bot.run()
 
 
