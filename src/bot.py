@@ -1,6 +1,7 @@
 from telegram import ParseMode, ForceReply, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     Updater,
+    PicklePersistence,
     CommandHandler,
     CallbackQueryHandler,
     CallbackContext,
@@ -37,7 +38,7 @@ def catch_errors(func):
 
 class Bot(Updater):
     WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא',
-                    2: 'עוד שבועיים', 3: 'עוד חודש'}
+                    2: 'עוד שבועיים', 3: 'עוד שלושה שבועות '}
     MAX_WEEK = 4
     MIN_WEEK = 1
     GRADES = {'ט': 9, 'י': 10, 'יא': 11, 'יב': 12,
