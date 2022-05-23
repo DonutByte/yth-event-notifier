@@ -84,7 +84,7 @@ def create_admin_menu(*,
             ADD: [MessageHandler(Filters.regex(r'\d{6, 10}'), add_admin)],
             REMOVE: [MessageHandler(Filters.regex(r'\d{6, 10}'), remove_admin)],
 
-            **{enforced_admin_states}
+            **enforced_admin_states
         },
         fallbacks=fallbacks,
         **kwargs
