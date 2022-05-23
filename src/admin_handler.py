@@ -64,7 +64,7 @@ def remove_admin(update: Update, context: CallbackContext):
 def create_admin_menu(*,
                       additional_states: dict[int, list[TELEGRAM_HANDLER]],
                       menu_button_labels: list[str],
-                      fallbacks: list[TELEGRAM_HANDLER], **kwargs):
+                      fallbacks: list[TELEGRAM_HANDLER], **kwargs) -> ConversationHandler:
 
     # check `additional_states`s' numbers are not used
     intersection = USED_NUMS.intersection(additional_states.keys())
@@ -78,7 +78,7 @@ def create_admin_menu(*,
         enforced_admin_states[key] = [handler if hasattr(handler, 'enforce_admin') else enforce_admin(handler)
                                       for handler in handlers]
 
-    admin_conversation = ConversationHandler(
+    return ConversationHandler(
         entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels))],
         states={
             ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^הוספת אדמין$'), get_new_admin),
