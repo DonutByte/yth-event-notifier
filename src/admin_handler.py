@@ -23,10 +23,10 @@ def enforce_admin(handler):
         return handler(update, context)
 
 
-@enforce_admin
 def admin_menu(button_labels):
     labels = [[label] for label in [*button_labels, *DEFAULT_BUTTON_LABELS]]
 
+    @enforce_admin
     def wrapper(update: Update, _: CallbackContext):
         update.message.reply_text('תפריט מנהלים\nמה תרצה לעשות?',
                                   reply_markup=ReplyKeyboardMarkup(labels))

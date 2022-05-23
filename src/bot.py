@@ -51,6 +51,8 @@ def enforce_signup(func):
 
 
 # TODO: update users when schedule has changed
+# TODO: change workbook each year
+# TODO: update user grades each year
 
 class Bot(Updater):
     WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא',
