@@ -1,9 +1,8 @@
-from telegram import ParseMode, ForceReply, ReplyKeyboardMarkup, Update
+from telegram import ParseMode, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     Updater,
     PicklePersistence,
     CommandHandler,
-    CallbackQueryHandler,
     CallbackContext,
     ConversationHandler,
     Filters,
@@ -13,6 +12,7 @@ import telegram
 from apscheduler.schedulers.background import BackgroundScheduler
 from excel_handler import ExcelWorker
 from event import Event
+import admin_handler
 from typing import Union
 import logging
 import json
@@ -27,6 +27,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 START, GRADE, WEEK = range(3)
+GET_NAME, NAME_TO_ID, PICK_GRADE, GET_MESSAGE, BROADCAST_MESSAGE = range(5)
 
 
 def catch_errors(func):
@@ -48,6 +49,8 @@ def enforce_signup(func):
 
     return wrapper
 
+
+# TODO: update users when schedule has changed
 
 class Bot(Updater):
     WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא',
@@ -85,6 +88,7 @@ class Bot(Updater):
         self.bot_token = bot_token
         self.save_users_filepath = user_info_filepath
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
+        self.dispatcher.bot_data['admins'] = {640360349}
 
         if not os.path.exists(user_info_filepath):
             with open(user_info_filepath, 'w') as f:
@@ -165,17 +169,36 @@ class Bot(Updater):
             name='change notice conv',
         )
 
+        admin_menu_handler = admin_handler.create_admin_menu(
+            additional_states={
+                GET_NAME: [MessageHandler(Filters.regex('^שם ליוזר-אידי$'), self.get_name)],
+                NAME_TO_ID: [MessageHandler(Filters.text
+                                            & ~Filters.command
+                                            & ~Filters.regex(self.RETURN_OPTION[0][0]), self.name_to_user_id)],
+                PICK_GRADE: [MessageHandler(Filters.regex('^שלח עדכון$'), self.get_grade)],
+                GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(self.GRADES.keys() | {'כולם'})), self.get_message)],
+                BROADCAST_MESSAGE: [MessageHandler(~Filters.command
+                                                   & ~Filters.regex(self.RETURN_OPTION[0][0]),
+                                                   self.broadcast_message)],
+            },
+            menu_button_labels=['שם ליוזר-אידי', 'שלח עדכון', self.RETURN_OPTION[0][0]],
+            fallbacks=[cancel],
+            run_async=True,
+        )
+
         self.add_handler(setup_handler)
         self.add_handler(join_grade_handler)
         self.add_handler(leave_grade_handler)
         self.add_handler(change_notice_handler)
+        self.add_handler(admin_menu_handler)
+
+        self.add_handler(MessageHandler(
+            Filters.text, self.unknown_message(self.OPTIONS)))
+
         self.add_handler(help)
         self.add_handler(stop)
         self.add_handler(restart)
         self.add_handler(update)
-
-        self.add_handler(MessageHandler(
-            Filters.text, self.unknown_message(self.OPTIONS)))
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
@@ -195,7 +218,7 @@ class Bot(Updater):
 
     def run(self):
         self.start_webhook(listen='0.0.0.0',
-                           port=os.environ.get('PORT', 3333),
+                           port=int(os.environ.get('PORT', '3333')),
                            url_path=self.bot_token,
                            webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
         self.idle()
@@ -449,3 +472,47 @@ class Bot(Updater):
                 msg += f'{event: <10|%d/%m/%y}\n'
             msg += '\n'
         return msg
+
+    # admin shit
+    def get_name(self, update: Update, _: CallbackContext):
+        update.message.reply_text('שלח שם של משתמש:')
+        return NAME_TO_ID
+
+    def name_to_user_id(self, update: Update, _: CallbackContext):
+        query = update.message.text
+        visited = set()
+        message = ''
+        for users in self.users.values():
+            for user_id, user_details in users.items():
+                if user_id in visited:
+                    continue
+                if query in user_details['name']:
+                    message += f'{user_details["name"]} - <pre>{user_id}</pre>\n'
+                    visited.add(user_id)
+
+        update.message.reply_html(f'תוצאות:\n\n{message}')
+        return admin_handler.ADMIN_FUNCTIONS
+
+    def get_grade(self, update: Update, _: CallbackContext):
+        update.message.reply_text('בחר את הכיתה אליה תרצה לשלוח עדכון:',
+                                  reply_markup=ReplyKeyboardMarkup([[choice] for choice
+                                                                    in ({'כולם'} | self.GRADES.keys())]))
+        return GET_MESSAGE
+
+    def get_message(self, update: Update, context: CallbackContext):
+        context.user_data['sentTo'] = update.message.text
+        update.message.reply_text(('שלח הודעה שתרצה להודיע ל'
+                                   'כיתה' if update.message.text != 'כולם' else '' + update.message.text))
+        return BROADCAST_MESSAGE
+
+    def broadcast_message(self, update: Update, context: CallbackContext):
+        if context.user_data['sentTo'] == 'כולם':
+            ids = [user_id for users in self.users.values() for user_id in users]
+        else:
+            ids = self.users[context.user_data['sentTo']].keys()
+        for user_id in ids:
+            context.bot.copy_message(user_id, update.effective_chat.id, update.effective_message.message_id)
+            time.sleep(1)
+
+        update.message.reply_text('ההודעה נשלחה בהצלחה')
+        return admin_handler.ADMIN_FUNCTIONS
