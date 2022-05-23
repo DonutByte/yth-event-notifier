@@ -12,7 +12,7 @@ import inspect
 
 
 TELEGRAM_HANDLER = Handler[Update, CCT]
-USED_NUMS = {-1, -2, -3}
+USED_NUMS = {10, 11, 12}
 ADMIN_FUNCTIONS, ADD, REMOVE = USED_NUMS
 BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
 
@@ -111,7 +111,7 @@ def create_admin_menu(*,
                               MessageHandler(Filters.regex('^מחיקת אדמין$'), get_admin_id)]
                              + additional_admin_functions,
 
-            ADD: [MessageHandler(Filters.regex('\d{6,10}'), add_admin), MessageHandler(Filters.text, lambda update, _: update.message.reply_text(update.message.text))],
+            ADD: [MessageHandler(Filters.regex('\d{6,10}'), add_admin)],
             REMOVE: [MessageHandler(Filters.regex('\d{6,10}'), remove_admin)],
 
             **enforced_admin_states
