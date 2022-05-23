@@ -492,7 +492,7 @@ class Bot(Updater):
                     message += f'{user_details["name"]} - <pre>{user_id}</pre>\n'
                     visited.add(user_id)
 
-        update.message.reply_html(f'תוצאות:\n\n{message}')
+        update.message.reply_html(f'תוצאות:\n\n{message}', reply_markup=admin_handler.BUTTON_LABELS)
         return admin_handler.ADMIN_FUNCTIONS
 
     def get_grade(self, update: Update, _: CallbackContext):
@@ -504,7 +504,7 @@ class Bot(Updater):
     def get_message(self, update: Update, context: CallbackContext):
         context.user_data['sentTo'] = update.message.text
         update.message.reply_text(('שלח הודעה שתרצה להודיע ל' +
-                                   ('כיתה' if update.message.text != 'כולם' else '') + update.message.text))
+                                   ('כיתה ' if update.message.text != 'כולם' else '') + update.message.text))
         return BROADCAST_MESSAGE
 
     def broadcast_message(self, update: Update, context: CallbackContext):
@@ -516,5 +516,5 @@ class Bot(Updater):
             context.bot.copy_message(user_id, update.effective_chat.id, update.effective_message.message_id)
             time.sleep(1)
 
-        update.message.reply_text('ההודעה נשלחה בהצלחה')
+        update.message.reply_text('ההודעה נשלחה בהצלחה', reply_markup=admin_handler.BUTTON_LABELS)
         return admin_handler.ADMIN_FUNCTIONS

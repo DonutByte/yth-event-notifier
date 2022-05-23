@@ -14,7 +14,7 @@ import inspect
 TELEGRAM_HANDLER = Handler[Update, CCT]
 USED_NUMS = {-1, -2, -3}
 ADMIN_FUNCTIONS, ADD, REMOVE = USED_NUMS
-DEFAULT_BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
+BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
 
 
 def enforce_admin(handler):
@@ -32,7 +32,8 @@ def enforce_admin(handler):
 
 
 def admin_menu(button_labels):
-    labels = [[label] for label in [*DEFAULT_BUTTON_LABELS, *button_labels]]
+    BUTTON_LABELS.extend(button_labels)
+    labels = [[label] for label in BUTTON_LABELS]
 
     @enforce_admin
     def wrapper(update: Update, _: CallbackContext):
