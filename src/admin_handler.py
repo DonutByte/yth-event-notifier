@@ -8,6 +8,7 @@ from telegram.ext import (
 )
 from telegram.ext.utils.types import CCT
 from collections import defaultdict
+import inspect
 
 
 TELEGRAM_HANDLER = Handler[Update, CCT]
@@ -17,7 +18,10 @@ DEFAULT_BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
 
 
 def enforce_admin(handler):
-    handler.enforce_admin = ...
+    if inspect.ismethod(handler):
+        handler.__func__.enforce_admin = ...
+    else:
+        handler.enforce_admin = ...
 
     def wrapper(update: Update, context: CallbackContext):
         if update.effective_user.id not in context.bot_data['admins']:
