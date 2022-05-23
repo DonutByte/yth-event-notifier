@@ -32,7 +32,7 @@ def enforce_admin(handler):
 
 
 def admin_menu(button_labels):
-    labels = [[label] for label in [*button_labels, *DEFAULT_BUTTON_LABELS]]
+    labels = [[label] for label in [*DEFAULT_BUTTON_LABELS, *button_labels]]
 
     @enforce_admin
     def wrapper(update: Update, _: CallbackContext):
