@@ -53,7 +53,8 @@ def get_new_admin(update: Update, context: CallbackContext):
 
 @enforce_admin
 def add_admin(update: Update, context: CallbackContext):
-    context.bot_data['admins'].add(update.message.text)
+    context.bot_data['admins'].add(int(update.message.text))
+    update.message.reply_text('המשתמש עכשיו אדמין', reply_markup=ReplyKeyboardMarkup(BUTTON_LABELS))
     return ADMIN_FUNCTIONS
 
 
@@ -65,7 +66,12 @@ def get_admin_id(update: Update, context: CallbackContext):
 
 @enforce_admin
 def remove_admin(update: Update, context: CallbackContext):
-    context.bot_data['admins'].remove(update.message.text)
+    try:
+        context.bot_data['admins'].remove(int(update.message.text))
+    except KeyError:
+        # user_id is not an admin
+        pass
+    update.message.reply_text('המשתמש כבר לא אדמין', reply_markup=ReplyKeyboardMarkup(BUTTON_LABELS))
     return ADMIN_FUNCTIONS
 
 
