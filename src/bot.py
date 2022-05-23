@@ -498,7 +498,7 @@ class Bot(Updater):
     def get_grade(self, update: Update, _: CallbackContext):
         update.message.reply_text('בחר את הכיתה אליה תרצה לשלוח עדכון:',
                                   reply_markup=ReplyKeyboardMarkup([[choice] for choice
-                                                                    in ({'כולם'} | self.GRADES.keys())]))
+                                                                    in (['כולם'] + list(self.GRADES.keys()))]))
         return GET_MESSAGE
 
     def get_message(self, update: Update, context: CallbackContext):
@@ -511,7 +511,7 @@ class Bot(Updater):
         if context.user_data['sentTo'] == 'כולם':
             ids = [user_id for users in self.users.values() for user_id in users]
         else:
-            ids = self.users[context.user_data['sentTo']].keys()
+            ids = self.users[str(self.GRADES[context.user_data['sentTo']])].keys()
         for user_id in ids:
             context.bot.copy_message(user_id, update.effective_chat.id, update.effective_message.message_id)
             time.sleep(1)
