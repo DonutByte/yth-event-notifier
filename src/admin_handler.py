@@ -7,6 +7,8 @@ from telegram.ext import (
     Filters
 )
 from telegram.ext.utils.types import CCT
+from collections import defaultdict
+
 
 TELEGRAM_HANDLER = Handler[Update, CCT]
 USED_NUMS = {-1, -2, -3}
@@ -81,12 +83,16 @@ def create_admin_menu(*,
             f'additional admin states have overlapping keys with default state; overlapping keys: {intersection}')
 
     # make sure handlers are wrapped with `enforce_admin` function
-    enforced_admin_states = dict()
+    enforced_admin_states = defaultdict([])
     for key, handlers in additional_states.items():
-        enforced_admin_states[key] = [handler if hasattr(handler, 'enforce_admin') else enforce_admin(handler)
-                                      for handler in handlers]
+        for handler in handlers:
+            callback = handler.callback
+            enforced_admin_states[key].append(callback
+                                              if hasattr(callback, 'enforce_admin')
+                                              else enforce_admin(callback))
 
     additional_admin_functions = enforced_admin_states.pop(ADMIN_FUNCTIONS)
+    
     return ConversationHandler(
         entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels))],
         states={
