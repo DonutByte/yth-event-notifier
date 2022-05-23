@@ -4,8 +4,11 @@ from openpyxl.utils.cell import column_index_from_string
 import datetime
 from event import Event
 import requests
-from creds import DOWNLOAD_URL
 import re
+import os
+
+EXCEL_URL = os.environ['EXCEL_URL']
+DOWNLOAD_URL = f'{EXCEL_URL}/export?format=xlsx'
 
 
 class ExcelWorker:
@@ -57,7 +60,7 @@ class ExcelWorker:
     def get_this_week_row(self):
         today = datetime.date.today()
         sunday = today - \
-            datetime.timedelta((today.weekday() + 1) % 7)  # 6 = sunday
+                 datetime.timedelta((today.weekday() + 1) % 7)  # 6 = sunday
         for cells in self.worksheet.iter_rows(max_col=column_index_from_string(self.DATE_COLUMN),
                                               min_col=column_index_from_string(
                                                   self.DATE_COLUMN),
@@ -118,7 +121,7 @@ class ExcelWorker:
                     self.get_week_events(row + week_interval, grade))
 
         self.expire_date = datetime.date.today() \
-            + datetime.timedelta(days=intervals[0] * 7)
+                           + datetime.timedelta(days=intervals[0] * 7)
 
     def get_schedule(self, intervals: list[int]) -> dict[int, list[list[Event]]]:
         # before updating check if schedule's last date

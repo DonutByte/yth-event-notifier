@@ -17,8 +17,9 @@ from typing import Union
 import logging
 import json
 import time
-from creds import EXCEL_URL
-import copy
+import os
+
+EXCEL_URL = os.environ['EXCEL_URL']
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -392,7 +393,8 @@ class Bot(Updater):
             for user_id, user_details in self.users[str(grade)].items():
                 if 'days' not in user_details or not user_details['wantsUpdate']:
                     continue
-                message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[str(grade)]}</b></u>\n\n' + self.format_schedule(events[:user_details['days'] // 7]) + self.DETAILS
+                message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[str(grade)]}</b></u>\n\n' + self.format_schedule(
+                    events[:user_details['days'] // 7]) + self.DETAILS
                 try:
                     bot.send_message(chat_id=user_id, text=message, parse_mode=ParseMode.HTML,
                                      disable_web_page_preview=True, reply_markup=self.OPTIONS)
