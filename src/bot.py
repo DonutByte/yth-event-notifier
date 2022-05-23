@@ -186,8 +186,8 @@ class Bot(Updater):
     def run(self):
         self.start_webhook(listen='0.0.0.0',
                            port=443,
-                           url_path=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
-        self.start_polling()
+                           url_path=self.bot_token,
+                           webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
         self.idle()
 
     @staticmethod
