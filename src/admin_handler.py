@@ -83,7 +83,7 @@ def create_admin_menu(*,
             f'additional admin states have overlapping keys with default state; overlapping keys: {intersection}')
 
     # make sure handlers are wrapped with `enforce_admin` function
-    enforced_admin_states = defaultdict([])
+    enforced_admin_states = defaultdict(lambda: [])
     for key, handlers in additional_states.items():
         for handler in handlers:
             callback = handler.callback
@@ -92,7 +92,7 @@ def create_admin_menu(*,
                                               else enforce_admin(callback))
 
     additional_admin_functions = enforced_admin_states.pop(ADMIN_FUNCTIONS)
-    
+
     return ConversationHandler(
         entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels))],
         states={
