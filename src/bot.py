@@ -184,7 +184,7 @@ class Bot(Updater):
                                                    self.broadcast_message)],
             },
             menu_button_labels=['שם ליוזר-אידי', 'שלח עדכון', self.RETURN_OPTION[0][0]],
-            fallbacks=[cancel],
+            fallbacks=cancel,
             run_async=True,
         )
 
