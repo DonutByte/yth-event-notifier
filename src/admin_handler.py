@@ -60,7 +60,7 @@ def add_admin(update: Update, context: CallbackContext):
 
 @enforce_admin
 def get_admin_id(update: Update, context: CallbackContext):
-    update.message.reply_text('הזן יוזר-אידי של המשתמש שתרצה לקדם כאדמין:')
+    update.message.reply_text('הזן יוזר-אידי של המשתמש שתרצה למחוק כאדמין:')
     return REMOVE
 
 
@@ -110,7 +110,8 @@ def create_admin_menu(*,
             ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^הוספת אדמין$'), get_new_admin),
                               MessageHandler(Filters.regex('^מחיקת אדמין$'), get_admin_id)]
                              + additional_admin_functions,
-            ADD: [MessageHandler(Filters.regex('\d{6,10}'), remove_admin)],
+
+            ADD: [MessageHandler(Filters.regex('\d{6,10}'), add_admin), MessageHandler(Filters.text, lambda update, _: update.message.reply_text(update.message.text))],
             REMOVE: [MessageHandler(Filters.regex('\d{6,10}'), remove_admin)],
 
             **enforced_admin_states
