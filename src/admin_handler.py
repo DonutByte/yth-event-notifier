@@ -39,7 +39,7 @@ def admin_menu(button_labels):
     @enforce_admin
     def wrapper(update: Update, _: CallbackContext):
         update.message.reply_text('תפריט מנהלים\nמה תרצה לעשות?',
-                                  reply_markup=ReplyKeyboardMarkup(labels))
+                                  reply_markup=ReplyKeyboardMarkup(BUTTON_LABELS))
         return ADMIN_FUNCTIONS
 
     return wrapper
