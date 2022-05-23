@@ -18,6 +18,7 @@ import logging
 import json
 import time
 from creds import EXCEL_URL
+import copy
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -32,7 +33,18 @@ def catch_errors(func):
         try:
             return func(self, *args)
         except Exception as e:
-            pass
+            logger.exception(e)
+
+    return wrapper
+
+
+def enforce_signup(func):
+    def wrapper(self, update: Update, callback_context: CallbackContext):
+        if any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
+            return func(self, update, callback_context)
+        else:
+            update.message.reply_text('עליך קודם להירשם!\nלחץ ▶️התחל')
+
     return wrapper
 
 
@@ -41,12 +53,13 @@ class Bot(Updater):
                     2: 'עוד שבועיים', 3: 'עוד שלושה שבועות '}
     MAX_WEEK = 4
     MIN_WEEK = 1
-    GRADES = {'ט': 9, 'י': 10, 'יא': 11, 'יב': 12,
-              "ט'": 9, "י'": 10, "יא'": 11, "יב'": 12}
+    GRADES = {  # 'ט': 9, 'י': 10, 'יא': 11, 'יב': 12,
+        "ט'": 9, "י'": 10, "יא'": 11, "יב'": 12}
+    NUM_TO_GRADE = {str(val): key for key, val in GRADES.items()}
     GRADES_KEYBOARD = [["ט'"], ["י'"], ["יא'"], ["יב'"]]
     WEEKS_KEYBOARD = [[f'{i} שבוע/ות']
                       for i in range(MIN_WEEK, MAX_WEEK + 1)] + [['לא ארצה עדכון אוטומטי']]
-    OPTIONS = ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה כיתה', 'שנה אופק התראה'],
+    OPTIONS = ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה אופק התראה'], ['הצטרף לכיתה', 'צא מכיתה'],
                                             ['עצור עדכון אוטומטי', 'שחזר עדכון אוטומטי'], ['▶️התחל', '❓עזרה']])
     RETURN_OPTION = [['🔙חזור']]
     DETAILS = "\n\n💡 לחיצה על התאריך תשלח אתכם ליומן גוגל\n" \
@@ -67,7 +80,8 @@ class Bot(Updater):
         else:
             self.update_interval = update_interval
 
-        super().__init__(bot_token, use_context=use_context)
+        super().__init__(bot_token, use_context=use_context, persistence=PicklePersistence('data.pickle'))
+        self.bot_token = bot_token
         self.save_users_filepath = user_info_filepath
         self.users = self.get_user_info(user_info_filepath)
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
@@ -79,8 +93,10 @@ class Bot(Updater):
             Filters.regex('^❓עזרה$'), self.help)]
         update = [CommandHandler('update', self.update_one), MessageHandler(
             Filters.regex('^עדכן$'), self.update_one)]
-        grade = [CommandHandler('grade', self.change_grade), MessageHandler(Filters.regex('^שנה כיתה$'),
-                                                                            self.change_grade)]
+        join_grade = [CommandHandler('join_grade', self.join_grade), MessageHandler(Filters.regex('^הצטרף לכיתה$'),
+                                                                                    self.join_grade)]
+        leave_grade = [CommandHandler('leave_grade', self.leave_grade), MessageHandler(Filters.regex('^צא מכיתה$'),
+                                                                                       self.leave_grade)]
         week = [CommandHandler('notice', self.change_week), MessageHandler(Filters.regex('^שנה אופק התראה$'),
                                                                            self.change_week)]
         stop = [CommandHandler('stop', self.stop_updating_me), MessageHandler(Filters.regex('^עצור עדכון אוטומטי$'),
@@ -94,20 +110,37 @@ class Bot(Updater):
             entry_points=start,
             states={
                 START: start,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade), MessageHandler(Filters.text, self.unknown_message(ReplyKeyboardMarkup(self.GRADES_KEYBOARD)))],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade),
+                        MessageHandler(Filters.text, self.unknown_message(ReplyKeyboardMarkup(self.GRADES_KEYBOARD)))],
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות') ^ Filters.regex(
-                    '^לא ארצה עדכון אוטומטי$'), self.week), MessageHandler(Filters.text, self.unknown_message(ReplyKeyboardMarkup(self.WEEKS_KEYBOARD)))],
+                    '^לא ארצה עדכון אוטומטי$'), self.week),
+                       MessageHandler(Filters.text, self.unknown_message(ReplyKeyboardMarkup(self.WEEKS_KEYBOARD)))],
             },
             fallbacks=[CommandHandler('cancel', self.start)],
+            persistent=True,
+            name='setup conv',
         )
 
-        change_grade_handler = ConversationHandler(
-            entry_points=grade,
+        join_grade_handler = ConversationHandler(
+            entry_points=join_grade,
             states={
-                START: grade,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade_callback)],
+                START: join_grade,
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.join_grade_callback)],
             },
-            fallbacks=cancel
+            fallbacks=cancel,
+            persistent=True,
+            name='join grade conv',
+        )
+
+        leave_grade_handler = ConversationHandler(
+            entry_points=leave_grade,
+            states={
+                START: leave_grade,
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.leave_grade_callback)],
+            },
+            fallbacks=cancel,
+            persistent=True,
+            name='leave grade conv',
         )
 
         change_notice_handler = ConversationHandler(
@@ -117,11 +150,14 @@ class Bot(Updater):
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות|לא ארצה עדכון אוטומטי'),
                                       self.week)],
             },
-            fallbacks=cancel
+            fallbacks=cancel,
+            persistent=True,
+            name='change notice conv',
         )
 
         self.add_handler(setup_handler)
-        self.add_handler(change_grade_handler)
+        self.add_handler(join_grade_handler)
+        self.add_handler(leave_grade_handler)
         self.add_handler(change_notice_handler)
         self.add_handler(help)
         self.add_handler(stop)
@@ -148,6 +184,9 @@ class Bot(Updater):
         self.job_queue.run_repeating(task_func, interval=interval)
 
     def run(self):
+        self.start_webhook(listen='0.0.0.0',
+                           port=443,
+                           url_path=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
         self.start_polling()
         self.idle()
 
@@ -162,48 +201,46 @@ class Bot(Updater):
 
     def start(self, update: Update, context: CallbackContext):
         # check if it's not the first login
-        if str(update.effective_user.id) in self.users:
+        if any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
             update.message.reply_text('אתה כבר רשום במערכת\n'
                                       f'תוכל לשנות/לראות נתונים ע"י לחיצה על הכפתור המתאים👇',
                                       reply_markup=self.OPTIONS)
             return
 
         user = update.message.from_user
-        logger.info("User %s started the conversation.", user.first_name)
+        logger.info("User %s started the conversation.", user.full_name)
 
-        context.bot.send_message(chat_id=update.effective_chat.id, text=f"שלום {user.first_name}, באיזה כיתה אתה?",
-                                 reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD,
-                                                                  one_time_keyboard=True,
-                                                                  input_field_placeholder='באיתה כיתה אתה?'))
+        update.message.reply_text(text=f"שלום {user.first_name}, באיזה כיתה אתה?",
+                                  reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD,
+                                                                   one_time_keyboard=True,
+                                                                   input_field_placeholder='באיתה כיתה אתה?'))
         return GRADE
 
-    def stop_updating_me(self, update: Update, _: CallbackContext):
-        if str(update.effective_user.id) not in self.users:
-            update.message.reply_text('עליך קודם להירשם!\nלחץ ▶️התחל')
-        else:
-            self.users[str(update.effective_user.id)]['wantsUpdate'] = False
-            update.message.reply_text(
-                "😔 לא תקבל עוד עדכונים...\nאם תתחרט לחץ 'שחזר עדכון אוטומטי'")
-            self.save_user_info()
+    @enforce_signup
+    def stop_updating_me(self, update: Update, context: CallbackContext):
+        for grade in context.user_data['grade']:
+            self.users[grade][str(update.effective_user.id)]['wantsUpdate'] = False
+        update.message.reply_text(
+            "😔 לא תקבל עוד עדכונים...\nאם תתחרט לחץ 'שחזר עדכון אוטומטי'")
+        self.save_user_info()
 
-    def start_updating_me(self, update: Update, _: CallbackContext):
-        if str(update.effective_user.id) not in self.users:
-            update.message.reply_text('עליך קודם להירשם!\nלחץ ▶️התחל')
-        else:
-            self.users[str(update.effective_user.id)]['wantsUpdate'] = True
-            update.message.reply_text(
-                "משבוע הבא תקבל עדכונים אוטומטים!\nכדי להפסיק לחץ 'עצור עדכון אוטומטי'")
-            self.save_user_info()
+    @enforce_signup
+    def start_updating_me(self, update: Update, context: CallbackContext):
+        for grade in context.user_data['grade']:
+            self.users[grade][str(update.effective_user.id)]['wantsUpdate'] = True
+        update.message.reply_text(
+            "משבוע הבא תקבל עדכונים אוטומטים!\nכדי להפסיק לחץ 'עצור עדכון אוטומטי'")
+        self.save_user_info()
 
     def grade(self, update: Update, context: CallbackContext):
-        result = self.grade_callback(update, context)
+        result = self.join_grade_callback(update, context)
         if result == GRADE:
             return GRADE
         else:
             update.message.reply_text(text=f'{update.effective_user.full_name} אתה בכיתה {update.message.text}!'
-                                           f'\nדבר אחרון, כמה שבועות לפני תרצה התראה?',
-                                      reply_markup=ReplyKeyboardMarkup(self.WEEKS_KEYBOARD, one_time_keyboard=True,
-                                                                       input_field_placeholder='כמה שבועות לפני תרצה התראה?'))
+                                           f'\nדבר אחרון, הבוט ישלח כל יום ראשון ב7:00 לו"ז של השבועות הבאים (עפ"י '
+                                           f'בחירתכם)\nכמה שבועות תרצו לראות מראש?',
+                                      reply_markup=ReplyKeyboardMarkup(self.WEEKS_KEYBOARD, one_time_keyboard=True))
             return WEEK
 
     def week(self, update: Update, context: CallbackContext):
@@ -211,7 +248,12 @@ class Bot(Updater):
         if update.message.text == 'לא ארצה עדכון אוטומטי':
             context.user_data['days'] = 7
             context.user_data['wantsUpdate'] = False
-            self.users[user] = context.user_data
+            for grade in context.user_data['grade']:
+                self.users[grade][user] = {}
+                self.users[grade][user]['days'] = 7
+                self.users[grade][user]['wantsUpdate'] = False
+                self.users[grade][user]['name'] = update.effective_user.full_name
+
             update.message.reply_text("לא תקבל עדכונים שבועיים אך תמיד תוכל לבקש ידנית: /update או 'עדכן'",
                                       reply_markup=self.OPTIONS)
             self.save_user_info()
@@ -224,15 +266,15 @@ class Bot(Updater):
                         f'הזן מספר בין {self.MIN_WEEK} ל{self.MAX_WEEK}')
                     return WEEK
 
-                # update days
                 context.user_data['wantsUpdate'] = True
                 context.user_data['days'] = weeks * 7
 
-                if user in self.users:
-                    self.users[user]['wantsUpdate'] = context.user_data['wantsUpdate']
-                    self.users[user]['days'] = context.user_data['days']
-                else:
-                    self.users[user] = context.user_data
+                # update days
+                for grade in context.user_data['grade']:
+                    self.users[grade][user] = {}
+                    self.users[grade][user]['wantsUpdate'] = True
+                    self.users[grade][user]['days'] = weeks * 7
+                    self.users[grade][user]['name'] = update.effective_user.full_name
 
                 update.message.reply_text(f'החל משבוע הבא, תקבל עדכון ל{weeks} שבוע/ות הבא/ים',
                                           reply_markup=self.OPTIONS)
@@ -251,31 +293,39 @@ class Bot(Updater):
 
         return ConversationHandler.END
 
-    def change_grade(self, update: Update, _: CallbackContext):
-        user = str(update.effective_user.id)
-        if user not in self.users:
-            update.message.reply_text('כדי לשנות כיתה עליך קודם להירשם...')
-            return ConversationHandler.END
-        grade = next((text for text, num in self.GRADES.items()
-                     if num == self.users[user]["grade"]), "שלא קיימת")
-        update.message.reply_text(f'אתה __בכיתה {grade}__'
-                                  f'\nאם אתה רוצה לשנות כיתה, בחר את הכיתה החדשה:\n'
+    @enforce_signup
+    def join_grade(self, update: Update, context: CallbackContext):
+        grades = ','.join(map(lambda g: self.NUM_TO_GRADE[g], context.user_data["grade"]))
+        update.message.reply_text(f'אתה בכית{"ה" if len(context.user_data["grade"]) == 1 else "ות"} {grades}'
+                                  f'\nאם אתה רוצה להצטרף כיתה, בחר את הכיתה החדשה:\n'
                                   f"אם לא לחץ '{self.RETURN_OPTION[0][0]}'",
                                   parse_mode=ParseMode.MARKDOWN_V2,
-                                  reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD + self.RETURN_OPTION,
-                                                                   input_field_placeholder='באיתה כיתה אתה?'))
+                                  reply_markup=ReplyKeyboardMarkup(
+                                      [grade for grade in self.GRADES_KEYBOARD
+                                       if str(self.GRADES[grade[0]]) not in context.user_data["grade"]]
+                                      + self.RETURN_OPTION,
+                                      one_time_keyboard=True))
         return GRADE
 
-    def change_week(self, update: Update, _: CallbackContext):
-        user = str(update.effective_user.id)
-        if self.users[user]["wantsUpdate"]:
-            current_grade_msg = f'אתה מקבל התראה של *__{self.users[user]["days"] // 7} שבוע/ות__*'
+    @enforce_signup
+    def leave_grade(self, update: Update, context: CallbackContext):
+        update.message.reply_markdown_v2('בחר בכיתה שתרצה לצאת ממנה:\n'
+                                         f"אם לא לחץ '{self.RETURN_OPTION[0][0]}'",
+                                         reply_markup=ReplyKeyboardMarkup(
+                                             [[grade] for grade, num in self.GRADES.items()
+                                              if str(num) in context.user_data["grade"]]
+                                             + self.RETURN_OPTION,
+                                             one_time_keyboard=True))
+        return GRADE
+
+    def change_week(self, update: Update, context: CallbackContext):
+        if context.user_data["wantsUpdate"]:
+            current_grade_msg = f'אתה מקבל התראה של *__{context.user_data["days"] // 7} שבוע/ות__*'
         else:
             current_grade_msg = "**אינך מקבל התרעות אוטומטיות**"
         update.message.reply_text(f'{current_grade_msg}\nאם אתה רוצה לשנות בחר אופציה חדשה\n'
                                   f"אם לא לחץ '{self.RETURN_OPTION[0][0]}'",
-                                  reply_markup=ReplyKeyboardMarkup(self.WEEKS_KEYBOARD + self.RETURN_OPTION,
-                                                                   input_field_placeholder='באיתה כיתה אתה?'),
+                                  reply_markup=ReplyKeyboardMarkup(self.WEEKS_KEYBOARD + self.RETURN_OPTION),
                                   parse_mode=ParseMode.MARKDOWN_V2)
         return WEEK
 
@@ -288,63 +338,84 @@ class Bot(Updater):
         def wrapper(update: Update, _: CallbackContext):
             update.message.reply_text(f"לא הבנתי\nבבקשה תשתמש בכפתורים\n",
                                       parse_mode=ParseMode.MARKDOWN_V2, reply_markup=keyboard)
+            return ConversationHandler.END
+
         return wrapper
 
-    def grade_callback(self, update: Update, context: CallbackContext):
-        grade = update.message.text
+    def join_grade_callback(self, update: Update, context: CallbackContext):
+        prev_grade, *_ = context.user_data.get('grade', [None])
+        user = str(update.effective_user.id)
         try:
-            context.user_data['grade'] = int(self.GRADES[grade])
+            if 'grade' not in context.user_data or not context.user_data['grade']:
+                context.user_data['grade'] = frozenset()
+
+            grade = str(self.GRADES[update.message.text])
+            context.user_data['grade'] = context.user_data['grade'].union({grade})
         except KeyError:
-            update.message.reply_text(f"כיתה שבחרת לא קיימת\nאם לא תרצה לשנות לחץ '{self.RETURN_OPTION[0][0]}'",
-                                      reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD + self.RETURN_OPTION,
-                                                                       one_time_keyboard=True,
-                                                                       input_field_placeholder='בחר כיתה'))
+            if prev_grade is None:
+                update.message.reply_text('הכיתה שבחרת לא קיימת, בבקשה תשתמש בכפתורים',
+                                          reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD, one_time_keyboard=True,
+                                                                           input_field_placeholder='בחר כיתה'))
+            else:
+                update.message.reply_text(f"כיתה שבחרת לא קיימת\nאם לא תרצה לשנות לחץ '{self.RETURN_OPTION[0][0]}'",
+                                          reply_markup=ReplyKeyboardMarkup(self.GRADES_KEYBOARD + self.RETURN_OPTION,
+                                                                           one_time_keyboard=True,
+                                                                           input_field_placeholder='בחר כיתה'))
             return GRADE
         else:
-            user = str(update.effective_user.id)
-            if user in self.users:
-                update.message.reply_text(
-                    'הכיתה שונתה בהצלחה!', reply_markup=self.OPTIONS)
-                self.users[user]['grade'] = context.user_data['grade']
+            if prev_grade is not None and len(prev_grade) > 0:
+                self.users[grade][user] = self.users[prev_grade][user]
                 self.save_user_info()
+                update.message.reply_text(
+                    'הכיתה הוספה בהצלחה!', reply_markup=self.OPTIONS)
+
+        return ConversationHandler.END
+
+    @enforce_signup
+    def leave_grade_callback(self, update: Update, context: CallbackContext):
+        user = str(update.effective_user.id)
+        try:
+            grade = str(self.GRADES[update.message.text])
+            context.user_data['grade'] = context.user_data['grade'].difference({grade})
+        except ValueError:
+            update.message.reply_text(f'לא היית בכיתה {update.message.text}', reply_markup=self.OPTIONS)
+        else:
+            del self.users[grade][user]
+            update.message.reply_text(f'יצאת מכיתה {update.message.text} בהצלחה!\n'
+                                      'תוכל תמיד להצטרף שוב 🙂', reply_markup=self.OPTIONS)
         return ConversationHandler.END
 
     @catch_errors
     def update_all(self, bot: telegram.Bot) -> None:
-        schedule: dict[int, list[list[Event]]
-                       ] = self.excel_handler.get_schedule(self.update_interval)
-        for user in self.users:
-            if 'days' not in self.users[user] or not self.users[user]['wantsUpdate']:
-                continue
-
-            message = self.format_schedule(schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]) \
-                + self.DETAILS
-            try:
-                bot.send_message(chat_id=user, text=message, parse_mode=ParseMode.HTML,
-                                 disable_web_page_preview=True, reply_markup=self.OPTIONS)
-            except Exception:
-                print(f'Failed to update {user}')
-                continue
-            time.sleep(1)
+        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+        for grade, events in schedule.items():
+            for user_id, user_details in self.users[str(grade)].items():
+                if 'days' not in user_details or not user_details['wantsUpdate']:
+                    continue
+                message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[str(grade)]}</b></u>\n\n' + self.format_schedule(events[:user_details['days'] // 7]) + self.DETAILS
+                try:
+                    bot.send_message(chat_id=user_id, text=message, parse_mode=ParseMode.HTML,
+                                     disable_web_page_preview=True, reply_markup=self.OPTIONS)
+                except Exception:
+                    print(f'Failed to update {user_id}')
+                finally:
+                    time.sleep(1)
 
     @catch_errors
+    @enforce_signup
     def update_one(self, update: Update, context: CallbackContext):
-        user = str(update.effective_user.id)
-        if user not in self.users:
-            update.message.reply_text('עליך קודם להירשם\nלחץ \start')
-            return
-
         try:
             schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(
                 self.update_interval)
         except RuntimeError as e:
-            update.message.reply_text(text=str(e))
+            logger.exception(e)
+            update.message.reply_text('חלה שגיאה, נסה שנית')
         else:
-            message = self.format_schedule(schedule[self.users[user]['grade']][: self.users[user]['days'] // 7]) \
-                + self.DETAILS
-
-            context.bot.send_message(chat_id=user, text=message, parse_mode=ParseMode.HTML,
-                                     disable_web_page_preview=True, reply_markup=self.OPTIONS)
+            for grade in context.user_data['grade']:
+                message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade]}</b></u>\n\n' + \
+                          self.format_schedule(schedule[int(grade)][: context.user_data['days'] // 7]) \
+                          + self.DETAILS
+                update.message.reply_html(text=message, disable_web_page_preview=True, reply_markup=self.OPTIONS)
 
     def help(self, update: Update, _: CallbackContext):
         help_message = ''
