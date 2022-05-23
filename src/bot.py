@@ -84,8 +84,17 @@ class Bot(Updater):
         super().__init__(bot_token, use_context=use_context, persistence=PicklePersistence('data.pickle'))
         self.bot_token = bot_token
         self.save_users_filepath = user_info_filepath
-        self.users = self.get_user_info(user_info_filepath)
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
+
+        if not os.path.exists(user_info_filepath):
+            with open(user_info_filepath) as f:
+                f.write("""{
+                    "9": {},
+                    "10": {},
+                    "11": {},
+                    "12": {}
+                }""")
+        self.users = self.get_user_info(user_info_filepath)
 
         # init command handlers
         start = [CommandHandler('start', self.start), MessageHandler(
