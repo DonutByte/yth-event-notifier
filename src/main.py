@@ -5,9 +5,9 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", None)
 
 
 def main():
-    excel_path = '../לוח מבחנים.xlsx'
+    excel_path = 'לוח מבחנים.xlsx'
     bot = Bot(BOT_TOKEN,
-              '../userdata.json', excel_path, True)
+              'userdata.json', excel_path, True)
     bot.run()
 
 
