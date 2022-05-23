@@ -49,7 +49,7 @@ def enforce_signup(func):
 
     return wrapper
 
-
+# TODO: repeat last keyboard
 # TODO: update users when schedule has changed
 # TODO: change workbook each year
 # TODO: update user grades each year
@@ -193,14 +193,13 @@ class Bot(Updater):
         self.add_handler(leave_grade_handler)
         self.add_handler(change_notice_handler)
         self.add_handler(admin_menu_handler)
-
-        self.add_handler(MessageHandler(
-            Filters.text, self.unknown_message(self.OPTIONS)))
-
         self.add_handler(help)
         self.add_handler(stop)
         self.add_handler(restart)
         self.add_handler(update)
+
+        self.add_handler(MessageHandler(
+            Filters.text, self.unknown_message(self.OPTIONS)))
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
