@@ -195,7 +195,7 @@ class Bot(Updater):
 
     def run(self):
         self.start_webhook(listen='0.0.0.0',
-                           port=443,
+                           port=os.environ.get('PORT', 3333),
                            url_path=self.bot_token,
                            webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
         self.idle()
