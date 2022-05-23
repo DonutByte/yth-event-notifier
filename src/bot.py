@@ -178,7 +178,8 @@ class Bot(Updater):
                 NAME_TO_ID: [MessageHandler(Filters.text
                                             & ~Filters.command
                                             & ~Filters.regex(self.RETURN_OPTION[0][0]), self.name_to_user_id)],
-                GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(self.GRADES.keys() | {'כולם'})), self.get_message)],
+                GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(list(self.GRADES.keys()) + ['כולם'])),
+                                             self.get_message)],
                 BROADCAST_MESSAGE: [MessageHandler(~Filters.command
                                                    & ~Filters.regex(self.RETURN_OPTION[0][0]),
                                                    self.broadcast_message)],
@@ -502,8 +503,8 @@ class Bot(Updater):
 
     def get_message(self, update: Update, context: CallbackContext):
         context.user_data['sentTo'] = update.message.text
-        update.message.reply_text(('שלח הודעה שתרצה להודיע ל'
-                                   'כיתה' if update.message.text != 'כולם' else '' + update.message.text))
+        update.message.reply_text(('שלח הודעה שתרצה להודיע ל' +
+                                   ('כיתה' if update.message.text != 'כולם' else '') + update.message.text))
         return BROADCAST_MESSAGE
 
     def broadcast_message(self, update: Update, context: CallbackContext):
