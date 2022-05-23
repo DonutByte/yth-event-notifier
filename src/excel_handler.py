@@ -22,6 +22,10 @@ class ExcelWorker:
     DATE_COLUMN = 'E'
 
     def __init__(self, workbook_path: str, intervals):
+        if not os.path.exists(workbook_path):
+            with open(workbook_path, 'wb') as f:
+                pass
+
         self.workbook_path = workbook_path
         self.workbook = load_workbook(self.workbook_path, read_only=True)
         self.worksheet = self.workbook['תשפ"ב']
