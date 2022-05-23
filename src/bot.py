@@ -87,7 +87,7 @@ class Bot(Updater):
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
 
         if not os.path.exists(user_info_filepath):
-            with open(user_info_filepath) as f:
+            with open(user_info_filepath, 'w') as f:
                 f.write("""{
                     "9": {},
                     "10": {},
