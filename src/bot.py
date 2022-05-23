@@ -27,7 +27,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 START, GRADE, WEEK = range(3)
-GET_NAME, NAME_TO_ID, PICK_GRADE, GET_MESSAGE, BROADCAST_MESSAGE = range(5)
+NAME_TO_ID, GET_MESSAGE, BROADCAST_MESSAGE = range(3)
 
 
 def catch_errors(func):
@@ -173,11 +173,11 @@ class Bot(Updater):
 
         admin_menu_handler = admin_handler.create_admin_menu(
             additional_states={
-                GET_NAME: [MessageHandler(Filters.regex('^שם ליוזר-אידי$'), self.get_name)],
+                admin_handler.ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^שם ליוזר-אידי$'), self.get_name),
+                                                MessageHandler(Filters.regex('^שלח עדכון$'), self.get_grade)],
                 NAME_TO_ID: [MessageHandler(Filters.text
                                             & ~Filters.command
                                             & ~Filters.regex(self.RETURN_OPTION[0][0]), self.name_to_user_id)],
-                PICK_GRADE: [MessageHandler(Filters.regex('^שלח עדכון$'), self.get_grade)],
                 GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(self.GRADES.keys() | {'כולם'})), self.get_message)],
                 BROADCAST_MESSAGE: [MessageHandler(~Filters.command
                                                    & ~Filters.regex(self.RETURN_OPTION[0][0]),

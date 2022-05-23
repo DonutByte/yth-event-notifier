@@ -65,9 +65,17 @@ def create_admin_menu(*,
                       additional_states: dict[int, list[TELEGRAM_HANDLER]],
                       menu_button_labels: list[str],
                       fallbacks: list[TELEGRAM_HANDLER], **kwargs) -> ConversationHandler:
+    """
+    creates basic admin menu and adds custom handlers to it
+    :param additional_states: the custom handlers
+    :param menu_button_labels: list of labels used in the custom handlers (will show up in keyboard)
+    :param fallbacks: the ConversationHandler fallback
+    :param kwargs: additional arguments to ConversationHandler
+    :return: the ConversationHandler with default and custom handlers
+    """
 
-    # check `additional_states`s' numbers are not used
-    intersection = USED_NUMS.intersection(additional_states.keys())
+    # check `additional_states`s' numbers are not used - except from `ADMIN_FUNCTIONS` which is ok
+    intersection = USED_NUMS.intersection(additional_states.keys()).symmetric_difference({ADMIN_FUNCTIONS})
     if intersection:
         raise ValueError(
             f'additional admin states have overlapping keys with default state; overlapping keys: {intersection}')
@@ -78,11 +86,13 @@ def create_admin_menu(*,
         enforced_admin_states[key] = [handler if hasattr(handler, 'enforce_admin') else enforce_admin(handler)
                                       for handler in handlers]
 
+    additional_admin_functions = enforced_admin_states.pop(ADMIN_FUNCTIONS)
     return ConversationHandler(
         entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels))],
         states={
             ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^הוספת אדמין$'), get_new_admin),
-                              MessageHandler(Filters.regex('^מחיקת אדמין$'), get_admin_id)],
+                              MessageHandler(Filters.regex('^מחיקת אדמין$'), get_admin_id)]
+                             + additional_admin_functions,
             ADD: [MessageHandler(Filters.regex(r'\d{6, 10}'), add_admin)],
             REMOVE: [MessageHandler(Filters.regex(r'\d{6, 10}'), remove_admin)],
 
