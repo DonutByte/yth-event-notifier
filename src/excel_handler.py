@@ -23,8 +23,9 @@ class ExcelWorker:
 
     def __init__(self, workbook_path: str, intervals):
         if not os.path.exists(workbook_path):
-            with open(workbook_path, 'wb') as f:
-                pass
+            file = requests.get(DOWNLOAD_URL)
+            with open(workbook_path, 'wb') as excel_file:
+                excel_file.write(file.content)
 
         self.workbook_path = workbook_path
         self.workbook = load_workbook(self.workbook_path, read_only=True)
