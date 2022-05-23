@@ -91,9 +91,8 @@ def create_admin_menu(*,
     for key, handlers in additional_states.items():
         for handler in handlers:
             callback = handler.callback
-            enforced_admin_states[key].append(callback
-                                              if hasattr(callback, 'enforce_admin')
-                                              else enforce_admin(callback))
+            handler.callback = callback if hasattr(callback, 'enforce_admin') else enforce_admin(callback)
+            enforced_admin_states[key].append(handler)
 
     additional_admin_functions = enforced_admin_states.pop(ADMIN_FUNCTIONS)
 
