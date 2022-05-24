@@ -115,7 +115,8 @@ def create_admin_menu(*,
             enforced_admin_states[key].append(handler)
 
     return ConversationHandler(
-        entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels))],
+        entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels,
+                                                                                 fallback=unhandled_message_handler))],
         states=enforced_admin_states,
         fallbacks=fallbacks,
         **kwargs
