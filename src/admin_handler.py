@@ -15,7 +15,7 @@ TELEGRAM_HANDLER = Handler[Update, CCT]
 USED_NUMS = {10, 11, 12}
 ADMIN_FUNCTIONS, ADD, REMOVE = USED_NUMS
 BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
-MAINTAINER_ID = 640360349
+MAINTAINER_ID = 0 #640360349
 
 def enforce_admin(*, fallback: TELEGRAM_HANDLER):
     def decorator(handler):
@@ -40,7 +40,7 @@ def admin_menu(button_labels, *, fallback: TELEGRAM_HANDLER):
     BUTTON_LABELS = [[label] for label in BUTTON_LABELS]
 
     @enforce_admin(fallback=fallback)
-    def wrapper(update: Update, _: CallbackContext):
+    def wrapper(update: Update, context: CallbackContext):
         markup = context.user_data['lastMarkup'] = BUTTON_LABELS
         update.message.reply_text('תפריט מנהלים\nמה תרצה לעשות?',
                                   reply_markup=ReplyKeyboardMarkup(markup))
