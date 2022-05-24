@@ -127,11 +127,9 @@ class Bot(Updater):
             entry_points=start,
             states={
                 START: start,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade),
-                        MessageHandler(Filters.text, self.unknown_message(ReplyKeyboardMarkup(self.GRADES_KEYBOARD)))],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade)],
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות') ^ Filters.regex(
-                    '^לא ארצה עדכון אוטומטי$'), self.week),
-                       MessageHandler(Filters.text, self.unknown_message(ReplyKeyboardMarkup(self.WEEKS_KEYBOARD)))],
+                    '^לא ארצה עדכון אוטומטי$'), self.week)],
             },
             fallbacks=[CommandHandler('cancel', self.start)],
             persistent=True,
@@ -202,7 +200,7 @@ class Bot(Updater):
         self.add_handler(update)
 
         self.add_handler(MessageHandler(
-            Filters.text, self.unknown_message(self.OPTIONS)))
+            Filters.text, self.unknown_message))
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
@@ -474,7 +472,7 @@ class Bot(Updater):
 
     def help(self, update: Update, context: CallbackContext):
         help_message = ''
-        for idx, command in enumerate(_.bot.get_my_commands()):
+        for idx, command in enumerate(context.bot.get_my_commands()):
             help_message += f'{chr(ord("א") + idx)}. /{command.command} - {command.description}\n'
         help_message += '\n\n' + 'לשאלות נוספות אנא פנו ל<a href="t.me/Da_Donut">מנהל הבוט</a>'
         update.message.reply_text(help_message, reply_markup=self.OPTIONS,
