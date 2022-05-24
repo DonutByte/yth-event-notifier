@@ -15,7 +15,7 @@ TELEGRAM_HANDLER = Handler[Update, CCT]
 USED_NUMS = {10, 11, 12}
 ADMIN_FUNCTIONS, ADD, REMOVE = USED_NUMS
 BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
-MAINTAINER_ID = 0 #640360349
+MAINTAINER_ID = 640360349
 
 def enforce_admin(*, fallback: TELEGRAM_HANDLER):
     def decorator(handler):
