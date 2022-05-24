@@ -228,7 +228,7 @@ class Bot(Updater):
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
-        israel_timezone = tz.gettz('Jerusalem Daylight Time')
+        israel_timezone = ... # tz.gettz('Jerusalem Daylight Time')
         scheduler.add_job(lambda: self.update_all(
             self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00', timezone=israel_timezone)
         scheduler.add_job(lambda : self.increment_grades, trigger='cron', month=9, day=1, hour='0', minute='0', timezone=israel_timezone)
