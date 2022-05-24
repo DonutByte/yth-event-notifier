@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 import telegram
 from apscheduler.schedulers.background import BackgroundScheduler
-from dateutil import tz
+# from dateutil import tz
 from excel_handler import ExcelWorker
 from event import Event
 from safepicklepersistence import SafePicklePersistence
