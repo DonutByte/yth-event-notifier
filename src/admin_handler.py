@@ -40,9 +40,9 @@ def admin_menu(button_labels, *, fallback: TELEGRAM_HANDLER):
 
     @enforce_admin(fallback=fallback)
     def wrapper(update: Update, _: CallbackContext):
-        markup = context.user_data['lastMarkup'] = ReplyKeyboardMarkup(BUTTON_LABELS)
+        markup = context.user_data['lastMarkup'] = BUTTON_LABELS
         update.message.reply_text('תפריט מנהלים\nמה תרצה לעשות?',
-                                  reply_markup=markup)
+                                  reply_markup=ReplyKeyboardMarkup(markup))
         return ADMIN_FUNCTIONS
 
     return wrapper
@@ -55,8 +55,8 @@ def get_new_admin(update: Update, context: CallbackContext):
 
 def add_admin(update: Update, context: CallbackContext):
     context.bot_data['admins'].add(int(update.message.text))
-    markup = context.user_data['lastMarkup'] = ReplyKeyboardMarkup(BUTTON_LABELS)
-    update.message.reply_text('המשתמש עכשיו אדמין', reply_markup=markup)
+    markup = context.user_data['lastMarkup'] = BUTTON_LABELS
+    update.message.reply_text('המשתמש עכשיו אדמין', reply_markup=ReplyKeyboardMarkup(markup))
     return ADMIN_FUNCTIONS
 
 def get_admin_id(update: Update, context: CallbackContext):
@@ -70,8 +70,8 @@ def remove_admin(update: Update, context: CallbackContext):
     except KeyError:
         # user_id is not an admin
         pass
-    markup = context.user_data['lastMarkup'] = ReplyKeyboardMarkup(BUTTON_LABELS)
-    update.message.reply_text('המשתמש כבר לא אדמין', reply_markup=markup)
+    markup = context.user_data['lastMarkup'] = BUTTON_LABELS
+    update.message.reply_text('המשתמש כבר לא אדמין', reply_markup=ReplyKeyboardMarkup(markup))
     return ADMIN_FUNCTIONS
 
 
