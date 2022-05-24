@@ -128,7 +128,7 @@ class Bot(Updater):
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות') ^ Filters.regex(
                     '^לא ארצה עדכון אוטומטי$'), self.week)],
             },
-            fallbacks=[CommandHandler('cancel', self.start)],
+            fallbacks=cancel,
             persistent=True,
             name='setup conv',
         )
