@@ -334,15 +334,14 @@ class Bot(Updater):
     @enforce_signup
     def join_grade(self, update: Update, context: CallbackContext):
         grades = ','.join(map(lambda g: self.NUM_TO_GRADE[g], context.user_data["grade"]))
+        context.user_data['lastMarkup'] = markup = ([grade for grade in self.GRADES_KEYBOARD
+                                                    if str(self.GRADES[grade[0]]) not in context.user_data["grade"]]
+                                                        + self.RETURN_OPTION)
         update.message.reply_text(f'אתה בכית{"ה" if len(context.user_data["grade"]) == 1 else "ות"} {grades}'
                                   f'\nאם אתה רוצה להצטרף כיתה, בחר את הכיתה החדשה:\n'
                                   f"אם לא לחץ '{self.RETURN_OPTION[0][0]}'",
                                   parse_mode=ParseMode.MARKDOWN_V2,
-                                  reply_markup=ReplyKeyboardMarkup(
-                                      [grade for grade in self.GRADES_KEYBOARD
-                                       if str(self.GRADES[grade[0]]) not in context.user_data["grade"]]
-                                      + self.RETURN_OPTION,
-                                      one_time_keyboard=True))
+                                  reply_markup=ReplyKeyboardMarkup(markup, one_time_keyboard=True))
         return GRADE
 
     @enforce_signup
@@ -368,9 +367,9 @@ class Bot(Updater):
         return WEEK
 
     def cancel(self, update: Update, context: CallbackContext):
-        markup = context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+        context.user_data['lastMarkup'] = self.OPTIONS.keyboard
         update.message.reply_text(
-            'אני עדיין פה אם תצטרך!', reply_markup=markup)
+            'אני עדיין פה אם תצטרך!', reply_markup=self.OPTIONS)
         return ConversationHandler.END
 
     def unknown_message(self, update: Update, context: CallbackContext):
@@ -418,6 +417,7 @@ class Bot(Updater):
     @enforce_signup
     def leave_grade_callback(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
+        context.user_data['lastMarkup'] = self.OPTIONS.keyboard
         try:
             grade = str(self.GRADES[update.message.text])
             context.user_data['grade'] = context.user_data['grade'].difference({grade})
@@ -427,7 +427,6 @@ class Bot(Updater):
             del self.users[grade][user]
             update.message.reply_text(f'יצאת מכיתה {update.message.text} בהצלחה!\n'
                                       'תוכל תמיד להצטרף שוב 🙂', reply_markup=self.OPTIONS)
-        context.user_data['lastMarkup'] = self.OPTIONS.keyboard
         return ConversationHandler.END
 
     @catch_errors
