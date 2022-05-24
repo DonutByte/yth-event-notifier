@@ -376,7 +376,6 @@ class Bot(Updater):
         update.message.reply_text(f"לא הבנתי\nבבקשה תשתמש בכפתורים\n",
                                   parse_mode=ParseMode.MARKDOWN_V2,
                                   reply_markup=ReplyKeyboardMarkup(context.user_data['lastMarkup']))
-        return ConversationHandler.END
 
     def join_grade_callback(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
