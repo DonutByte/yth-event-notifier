@@ -381,7 +381,7 @@ class Bot(Updater):
         user = str(update.effective_user.id)
 
         # get a grade - if there's one
-        if 'grade' in context.user_data and len(context.user_data['grade']) > 1:
+        if 'grade' in context.user_data and context.user_data['grade']:
             prev_grade, *_ = context.user_data['grade']
         else:
             prev_grade = None
