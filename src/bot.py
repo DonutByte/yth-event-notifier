@@ -404,10 +404,10 @@ class Bot(Updater):
 
             return GRADE
         else:
-            if prev_grade is not None and len(prev_grade) > 0:
+            if prev_grade is not None:
                 self.users[grade][user] = self.users[prev_grade][user]
                 self.save_user_info()
-                context.user_data['lastMarkup'] = markup = self.OPTIONS.keyboard
+                context.user_data['lastMarkup'] = self.OPTIONS.keyboard
                 update.message.reply_text(
                     'הכיתה הוספה בהצלחה!', reply_markup=self.OPTIONS)
 
