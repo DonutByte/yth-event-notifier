@@ -106,7 +106,7 @@ def create_admin_menu(*,
         **additional_states
     }
     enforced_admin_states = defaultdict(lambda: [])
-    for key, handlers in states:
+    for key, handlers in states.items():
         for handler in handlers:
             callback = handler.callback
             handler.callback = ( callback
