@@ -272,8 +272,8 @@ class Bot(Updater):
             return GRADE
         else:
             markup = context.user_data['lastMarkup'] = ReplyKeyboardMarkup(self.WEEKS_KEYBOARD, one_time_keyboard=True)
-            update.message.reply_text(text=f'{update.effective_user.full_name} אתה בכיתה {update.message.text}!'
-                                           f'\nדבר אחרון, הבוט ישלח כל יום ראשון ב7:00 לו"ז של השבועות הבאים (עפ"י '
+            update.message.reply_text(text=f'בחרת {update.message.text} תוכל להצטרף לעוד כיתות עוד מעט\n'
+                                           f'אבל לפני שתוכל, הבוט ישלח כל יום ראשון ב7:00 לו"ז של השבועות הבאים (עפ"י '
                                            f'בחירתכם)\nכמה שבועות תרצו לראות מראש?',
                                       reply_markup=markup)
             return WEEK
@@ -381,7 +381,6 @@ class Bot(Updater):
                                   parse_mode=ParseMode.MARKDOWN_V2, reply_markup=context.user_data['lastMarkup'])
         return ConversationHandler.END
 
-    @enforce_signup
     def join_grade_callback(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
 
