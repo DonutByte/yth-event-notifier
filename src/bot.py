@@ -50,7 +50,6 @@ def enforce_signup(func):
     return wrapper
 
 
-# TODO: repeat last keyboard
 # TODO: update users when schedule has changed
 # TODO: change workbook each year
 # TODO: update user grades each year
@@ -66,8 +65,6 @@ class Bot(Updater):
     GRADES_KEYBOARD = [["ט'"], ["י'"], ["יא'"], ["יב'"]]
     WEEKS_KEYBOARD = [[f'{i} שבוע/ות']
                       for i in range(MIN_WEEK, MAX_WEEK + 1)] + [['לא ארצה עדכון אוטומטי']]
-    OPTIONS = ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה אופק התראה'], ['הצטרף לכיתה', 'צא מכיתה'],
-                                            ['עצור עדכון אוטומטי', 'שחזר עדכון אוטומטי'], ['▶️התחל', '❓עזרה']])
     RETURN_OPTION = [['🔙חזור']]
     DETAILS = "\n\n💡 לחיצה על התאריך תשלח אתכם ליומן גוגל\n" \
               rf"ללוח מבחנים המלא: <a href='{EXCEL_URL}'>לחץ כאן</a>"
@@ -91,7 +88,7 @@ class Bot(Updater):
         self.bot_token = bot_token
         self.save_users_filepath = user_info_filepath
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
-        self.dispatcher.bot_data['admins'] = {640360349}
+        self.dispatcher.bot_data['admins'] = {admin_handler.MAINTAINER_ID}
 
         if not os.path.exists(user_info_filepath):
             with open(user_info_filepath, 'w') as f:
@@ -234,10 +231,18 @@ class Bot(Updater):
         with open(self.save_users_filepath, 'w') as f:
             json.dump(self.users, f, indent=4)
 
+    @staticmethod
+    def get_main_menu_labels(update: Update, context: CallbackContext):
+        user_id = update.effective_user.id
+        admins = context.bot_data['admins']
+        return ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה אופק התראה'], ['הצטרף לכיתה', 'צא מכיתה'],
+                                             ['עצור עדכון אוטומטי', 'שחזר עדכון אוטומטי'],
+                                             (['תפריט מנהלים'] if user_id in admins else []), ['▶️התחל', '❓עזרה']])
+
     def start(self, update: Update, context: CallbackContext):
         # check if it's not the first login
         if any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
-            markup = context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+            markup = context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
             update.message.reply_text('אתה כבר רשום במערכת\n'
                                       f'תוכל לשנות/לראות נתונים ע"י לחיצה על הכפתור המתאים👇',
                                       reply_markup=ReplyKeyboardMarkup(markup))
@@ -289,9 +294,9 @@ class Bot(Updater):
                 self.users[grade][user]['wantsUpdate'] = False
                 self.users[grade][user]['name'] = update.effective_user.full_name
 
-            context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+            context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
             update.message.reply_text("לא תקבל עדכונים שבועיים אך תמיד תוכל לבקש ידנית: /update או 'עדכן'",
-                                      reply_markup=self.OPTIONS)
+                                      reply_markup=self.get_main_menu_labels(update, context))
             self.save_user_info()
         else:
 
@@ -312,22 +317,22 @@ class Bot(Updater):
                     self.users[grade][user]['days'] = weeks * 7
                     self.users[grade][user]['name'] = update.effective_user.full_name
 
-                context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+                context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
                 update.message.reply_text(f'החל משבוע הבא, תקבל עדכון ל{weeks} שבוע/ות הבא/ים',
-                                          reply_markup=self.OPTIONS)
+                                          reply_markup=self.get_main_menu_labels(update, context))
                 self.save_user_info()
 
             except (IndexError, ValueError):
-                context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+                context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
                 if self.users[user]["wantsUpdate"]:
                     update.message.reply_text(
                         f'אתה מקבל התראה של *__{self.users[user]["days"] // 7} שבוע/ות__*\n'
                         "כדי לשנות: /notice או 'שנה אופק התראה'", parse_mode=ParseMode.MARKDOWN_V2,
-                        reply_markup=self.OPTIONS)
+                        reply_markup=self.get_main_menu_labels(update, context))
                 else:
                     update.message.reply_text("**אינך מקבל התרעות אוטומטיות**\n"
                                               "כדי לקבל: /restart או 'שחזר עדכון אוטומטי'",
-                                              parse_mode=ParseMode.MARKDOWN_V2, reply_markup=self.OPTIONS)
+                                              parse_mode=ParseMode.MARKDOWN_V2, reply_markup=self.get_main_menu_labels(update, context))
 
         return ConversationHandler.END
 
@@ -367,9 +372,9 @@ class Bot(Updater):
         return WEEK
 
     def cancel(self, update: Update, context: CallbackContext):
-        context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+        context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
         update.message.reply_text(
-            'אני עדיין פה אם תצטרך!', reply_markup=self.OPTIONS)
+            'אני עדיין פה אם תצטרך!', reply_markup=self.get_main_menu_labels(update, context))
         return ConversationHandler.END
 
     def unknown_message(self, update: Update, context: CallbackContext):
@@ -407,25 +412,25 @@ class Bot(Updater):
             if prev_grade is not None:
                 self.users[grade][user] = self.users[prev_grade][user]
                 self.save_user_info()
-                context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+                context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
                 update.message.reply_text(
-                    'הכיתה הוספה בהצלחה!', reply_markup=self.OPTIONS)
+                    'הכיתה הוספה בהצלחה!', reply_markup=self.get_main_menu_labels(update, context))
 
         return ConversationHandler.END
 
     @enforce_signup
     def leave_grade_callback(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
-        context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+        context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
         try:
             grade = str(self.GRADES[update.message.text])
             context.user_data['grade'] = context.user_data['grade'].difference({grade})
         except ValueError:
-            update.message.reply_text(f'לא היית בכיתה {update.message.text}', reply_markup=self.OPTIONS)
+            update.message.reply_text(f'לא היית בכיתה {update.message.text}', reply_markup=self.get_main_menu_labels(update, context))
         else:
             del self.users[grade][user]
             update.message.reply_text(f'יצאת מכיתה {update.message.text} בהצלחה!\n'
-                                      'תוכל תמיד להצטרף שוב 🙂', reply_markup=self.OPTIONS)
+                                      'תוכל תמיד להצטרף שוב 🙂', reply_markup=self.get_main_menu_labels(update, context))
         return ConversationHandler.END
 
     @catch_errors
@@ -438,8 +443,9 @@ class Bot(Updater):
                 message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[str(grade)]}</b></u>\n\n' + self.format_schedule(
                     events[:user_details['days'] // 7]) + self.DETAILS
                 try:
+                    # TODO: add main menu keyboard
                     bot.send_message(chat_id=user_id, text=message, parse_mode=ParseMode.HTML,
-                                     disable_web_page_preview=True, reply_markup=self.OPTIONS)
+                                     disable_web_page_preview=True)
                 except Exception:
                     print(f'Failed to update {user_id}')
                 finally:
@@ -459,17 +465,17 @@ class Bot(Updater):
                 message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade]}</b></u>\n\n' + \
                           self.format_schedule(schedule[int(grade)][: context.user_data['days'] // 7]) \
                           + self.DETAILS
-                update.message.reply_html(text=message, disable_web_page_preview=True, reply_markup=self.OPTIONS)
-                context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+                update.message.reply_html(text=message, disable_web_page_preview=True, reply_markup=self.get_main_menu_labels(update, context))
+                context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
 
     def help(self, update: Update, context: CallbackContext):
         help_message = ''
         for idx, command in enumerate(context.bot.get_my_commands()):
             help_message += f'{chr(ord("א") + idx)}. /{command.command} - {command.description}\n'
         help_message += '\n\n' + 'לשאלות נוספות אנא פנו ל<a href="t.me/Da_Donut">מנהל הבוט</a>'
-        update.message.reply_text(help_message, reply_markup=self.OPTIONS,
+        update.message.reply_text(help_message, reply_markup=self.get_main_menu_labels(update, context),
                                   parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-        context.user_data['lastMarkup'] = self.OPTIONS.keyboard
+        context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
 
     def format_schedule(self, schedule: list[list[Event]]):
         msg = ''

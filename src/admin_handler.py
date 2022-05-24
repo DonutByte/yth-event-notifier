@@ -15,6 +15,7 @@ TELEGRAM_HANDLER = Handler[Update, CCT]
 USED_NUMS = {10, 11, 12}
 ADMIN_FUNCTIONS, ADD, REMOVE = USED_NUMS
 BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
+MAINTAINER_ID = 640360349
 
 def enforce_admin(*, fallback: TELEGRAM_HANDLER):
     def decorator(handler):
@@ -65,10 +66,15 @@ def get_admin_id(update: Update, context: CallbackContext):
 
 
 def remove_admin(update: Update, context: CallbackContext):
+    user_id = int(update.message.text)
+    if user_id == MAINTAINER_ID:
+        update.message.reply_text('אין לך הרשאה למחוק את המשתמש הזה כאדמין!')
+        return ADMIN_FUNCTIONS
+
     try:
-        context.bot_data['admins'].remove(int(update.message.text))
-    except KeyError:
-        # user_id is not an admin
+        context.bot_data['admins'].remove(user_id)
+    except (KeyError, ValueError):
+        # user_id is not an admin or message is not a number
         pass
     markup = context.user_data['lastMarkup'] = BUTTON_LABELS
     update.message.reply_text('המשתמש כבר לא אדמין', reply_markup=ReplyKeyboardMarkup(markup))
