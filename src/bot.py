@@ -1,7 +1,8 @@
+import threading
+
 from telegram import ParseMode, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     Updater,
-    PicklePersistence,
     CommandHandler,
     CallbackContext,
     ConversationHandler,
@@ -10,8 +11,10 @@ from telegram.ext import (
 )
 import telegram
 from apscheduler.schedulers.background import BackgroundScheduler
+from dateutil import tz
 from excel_handler import ExcelWorker
 from event import Event
+from safepicklepersistence import SafePicklePersistence
 import admin_handler
 from typing import Union
 import logging
@@ -41,18 +44,39 @@ def catch_errors(func):
 
 
 def enforce_signup(func):
-    def wrapper(self, update: Update, callback_context: CallbackContext):
-        if any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
-            return func(self, update, callback_context)
-        else:
+    def wrapper(self, update: Update, context: CallbackContext):
+        if not any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
             update.message.reply_text('עליך קודם להירשם!\nלחץ ▶️התחל')
+            return
+
+        if 'lock' not in context.user_data:
+            context.user_data['lock'] = threading.Lock()
+
+        if not context.user_data['lock'].locked():
+            to_return = None
+            context.user_data['lock'].acquire()
+            try:
+                to_return = func(self, update, context)
+            except Exception as e:
+                logger.error(f'{func.__name__} raised an exception "{e}"')
+                message = f'חלה שגיאה\nאם הודעה זו נשלחת כמה פעמים פנה ל' \
+                          f'<a href="tg://user?id={admin_handler.MAINTAINER_ID}">מנהל הבוט</a>'
+                if update.message:
+                    update.message.reply_html(message)
+                else:
+                    update.callback_query.edit_message_text(message, parse_mode=ParseMode.HTML)
+            finally:
+                context.user_data['lock'].release()
+            return to_return
+
+        else:
+            update.message.reply_text(
+                'בקשתך הקודמת עדיין בתהליך, אנא המתן...')
 
     return wrapper
 
 
 # TODO: update users when schedule has changed
-# TODO: change workbook each year
-# TODO: update user grades each year
 
 class Bot(Updater):
     WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא',
@@ -84,7 +108,7 @@ class Bot(Updater):
         else:
             self.update_interval = update_interval
 
-        super().__init__(bot_token, use_context=use_context, persistence=PicklePersistence('data.pickle'))
+        super().__init__(bot_token, use_context=use_context, persistence=SafePicklePersistence('data.pickle'))
         self.bot_token = bot_token
         self.save_users_filepath = user_info_filepath
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
@@ -96,7 +120,8 @@ class Bot(Updater):
                     "9": {},
                     "10": {},
                     "11": {},
-                    "12": {}
+                    "12": {},
+                    "graduates": {},
                 }""")
         self.users = self.get_user_info(user_info_filepath)
 
@@ -184,6 +209,8 @@ class Bot(Updater):
             fallbacks=cancel,
             unhandled_message_handler=self.unknown_message,
             run_async=True,
+            persistent=True,
+            name='admin menu conv',
         )
 
         self.add_handler(setup_handler)
@@ -201,8 +228,10 @@ class Bot(Updater):
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
+        israel_timezone = tz.gettz('Jerusalem Daylight Time')
         scheduler.add_job(lambda: self.update_all(
-            self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00')
+            self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00', timezone=israel_timezone)
+        scheduler.add_job(lambda : self.increment_grades, trigger='cron', month=9, day=1, hour='0', minute='0', timezone=israel_timezone)
         scheduler.start()
 
     def add_handler(self, handler):
@@ -504,7 +533,7 @@ class Bot(Updater):
             for user_id, user_details in users.items():
                 if user_id in visited:
                     continue
-                if query in user_details['name']:
+                if query.lower() in user_details['name'].lower():
                     message += f'{user_details["name"]} - <pre>{user_id}</pre>\n'
                     visited.add(user_id)
         context.user_data['lastMarkup'] = markup = admin_handler.BUTTON_LABELS
@@ -540,3 +569,16 @@ class Bot(Updater):
         context.user_data['lastMarkup'] = markup = admin_handler.BUTTON_LABELS
         update.message.reply_text('ההודעה נשלחה בהצלחה', reply_markup=ReplyKeyboardMarkup(markup))
         return admin_handler.ADMIN_FUNCTIONS
+
+    def increment_grades(self):
+        updated = dict()
+        for grade, pupils in self.users.items():
+            if grade in ('12', 'graduates'): # seniors will be graduates
+                continue
+            updated[str(int(grade) + 1)] = pupils
+
+        # reset freshmen
+        self.users['9'] = dict()
+        # add seniors to graduates
+        self.users['graduates'].update(self.users['12'])
+

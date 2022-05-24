@@ -29,7 +29,8 @@ class ExcelWorker:
 
         self.workbook_path = workbook_path
         self.workbook = load_workbook(self.workbook_path, read_only=True)
-        self.worksheet = self.workbook['תשפ"ב']
+        years = sorted(name for name in self.workbook.sheetnames if name.startswith('תש'))[0]
+        self.worksheet = self.workbook[years]
         self.schedule: dict[int, list[list[Event]]] = dict()
         self.expire_date: datetime.date = datetime.date.today()
 
