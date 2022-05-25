@@ -22,7 +22,8 @@ import json
 import time
 import os
 
-from creds import EXCEL_URL
+# from creds import EXCEL_URL
+EXCEL_URL = os.environ['EXCEL_URL']
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
