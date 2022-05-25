@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 import telegram
 from apscheduler.schedulers.background import BackgroundScheduler
-# from dateutil import tz
+import pytz
 from excel_handler import ExcelWorker
 from event import Event
 from safepicklepersistence import SafePicklePersistence
@@ -22,7 +22,7 @@ import json
 import time
 import os
 
-EXCEL_URL = os.environ['EXCEL_URL']
+from creds import EXCEL_URL
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -121,7 +121,7 @@ class Bot(Updater):
                     "10": {},
                     "11": {},
                     "12": {},
-                    "graduates": {},
+                    "graduates": {}
                 }""")
         self.users = self.get_user_info(user_info_filepath)
 
@@ -145,13 +145,15 @@ class Bot(Updater):
         cancel = [CommandHandler('cancel', self.cancel), MessageHandler(
             Filters.regex('^🔙חזור$'), self.cancel)]
 
+        unknown = MessageHandler(~ (Filters.regex(r'/cancel') | Filters.regex('^🔙חזור$')), self.unknown_message)
+
         setup_handler = ConversationHandler(
             entry_points=start,
             states={
                 START: start,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade)],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade), unknown],
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות') ^ Filters.regex(
-                    '^לא ארצה עדכון אוטומטי$'), self.week)],
+                    '^לא ארצה עדכון אוטומטי$'), self.week), unknown],
             },
             fallbacks=cancel,
             persistent=True,
@@ -162,22 +164,24 @@ class Bot(Updater):
             entry_points=join_grade,
             states={
                 START: join_grade,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.join_grade_callback)],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.join_grade_callback), unknown],
             },
             fallbacks=cancel,
             persistent=True,
             name='join grade conv',
+            run_async=True,
         )
 
         leave_grade_handler = ConversationHandler(
             entry_points=leave_grade,
             states={
                 START: leave_grade,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.leave_grade_callback)],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.leave_grade_callback), unknown],
             },
             fallbacks=cancel,
             persistent=True,
             name='leave grade conv',
+            run_async=True,
         )
 
         change_notice_handler = ConversationHandler(
@@ -185,25 +189,28 @@ class Bot(Updater):
             states={
                 START: week,
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות|לא ארצה עדכון אוטומטי'),
-                                      self.week)],
+                                      self.week), unknown],
             },
             fallbacks=cancel,
             persistent=True,
             name='change notice conv',
+            run_async=True,
         )
 
         admin_menu_handler = admin_handler.create_admin_menu(
             additional_states={
                 admin_handler.ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^שם ליוזר-אידי$'), self.get_name),
-                                                MessageHandler(Filters.regex('^שלח עדכון$'), self.get_grade)],
+                                                MessageHandler(Filters.regex('^שלח עדכון$'), self.get_grade),
+                                                unknown],
                 NAME_TO_ID: [MessageHandler(Filters.text
                                             & ~Filters.command
-                                            & ~Filters.regex(self.RETURN_OPTION[0][0]), self.name_to_user_id)],
+                                            & ~Filters.regex(self.RETURN_OPTION[0][0]), self.name_to_user_id),
+                             unknown],
                 GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(list(self.GRADES.keys()) + ['כולם'])),
-                                             self.get_message)],
+                                             self.get_message), unknown],
                 BROADCAST_MESSAGE: [MessageHandler(~Filters.command
                                                    & ~Filters.regex(self.RETURN_OPTION[0][0]),
-                                                   self.broadcast_message)],
+                                                   self.broadcast_message), unknown],
             },
             menu_button_labels=['שם ליוזר-אידי', 'שלח עדכון', self.RETURN_OPTION[0][0]],
             fallbacks=cancel,
@@ -228,7 +235,7 @@ class Bot(Updater):
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
-        israel_timezone = ... # tz.gettz('Jerusalem Daylight Time')
+        israel_timezone = pytz.timezone('Asia/Jerusalem')
         scheduler.add_job(lambda: self.update_all(
             self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00', timezone=israel_timezone)
         scheduler.add_job(lambda : self.increment_grades, trigger='cron', month=9, day=1, hour='0', minute='0', timezone=israel_timezone)
@@ -245,10 +252,13 @@ class Bot(Updater):
         self.job_queue.run_repeating(task_func, interval=interval)
 
     def run(self):
-        self.start_webhook(listen='0.0.0.0',
-                           port=int(os.environ.get('PORT', '3333')),
-                           url_path=self.bot_token,
-                           webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
+        # self.start_webhook(listen='0.0.0.0',
+        #                    port=int(os.environ.get('PORT', '3333')),
+        #                    url_path=self.bot_token,
+        #                    webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
+        # self.idle()
+        self.job_queue.start()
+        self.start_polling(allowed_updates=[])
         self.idle()
 
     @staticmethod
@@ -275,7 +285,7 @@ class Bot(Updater):
             update.message.reply_text('אתה כבר רשום במערכת\n'
                                       f'תוכל לשנות/לראות נתונים ע"י לחיצה על הכפתור המתאים👇',
                                       reply_markup=ReplyKeyboardMarkup(markup))
-            return
+            return ConversationHandler.END
 
         user = update.message.from_user
         logger.info("User %s started the conversation.", user.full_name)
