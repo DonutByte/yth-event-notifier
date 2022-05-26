@@ -2,7 +2,7 @@ import datetime
 import threading
 from collections import defaultdict
 
-from telegram import ParseMode, ReplyKeyboardMarkup, Update
+from telegram import ParseMode, ReplyKeyboardMarkup, Update, ReplyKeyboardRemove
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -150,7 +150,7 @@ class Bot(Updater):
         cancel = [CommandHandler('cancel', self.cancel), MessageHandler(
             Filters.regex('^🔙חזור$'), self.cancel)]
 
-        unknown = MessageHandler(~ (Filters.regex(r'/cancel') | Filters.regex('^🔙חזור$')), self.unknown_message)
+        unknown = MessageHandler(~ (Filters.regex(r'\/cancel') | Filters.regex('^🔙חזור$')), self.unknown_message)
 
         setup_handler = ConversationHandler(
             entry_points=start,
@@ -225,11 +225,11 @@ class Bot(Updater):
             name='admin menu conv',
         )
 
-        self.add_handler(setup_handler)
         self.add_handler(join_grade_handler)
         self.add_handler(leave_grade_handler)
         self.add_handler(change_notice_handler)
         self.add_handler(admin_menu_handler)
+        self.add_handler(setup_handler)
         self.add_handler(help)
         self.add_handler(stop)
         self.add_handler(restart)
@@ -275,8 +275,10 @@ class Bot(Updater):
         with open(self.save_users_filepath, 'w') as f:
             json.dump(self.users, f, indent=4)
 
-    @staticmethod
-    def get_main_menu_labels(update: Update, context: CallbackContext):
+    def get_main_menu_labels(self, update: Update, context: CallbackContext):
+        if not any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
+            return ReplyKeyboardRemove()
+
         user_id = update.effective_user.id
         admins = context.bot_data['admins']
         return ReplyKeyboardMarkup(keyboard=[['עדכן'], ['שנה אופק התראה'], ['הצטרף לכיתה', 'צא מכיתה'],
@@ -610,7 +612,7 @@ class Bot(Updater):
         # add seniors to graduates
         updated['graduates'] = {**self.users['graduates'], **self.users['12']}
         self.users = updated
-        # self.save_user_info()
+        self.save_user_info()
 
         # update user data
         user_ids = {int(user_id) for users in self.users.values() for user_id in users}
@@ -622,5 +624,4 @@ class Bot(Updater):
                     self.dispatcher.user_data[user_id]['grade'] = {*self.dispatcher.user_data[user_id]['grade'], grade}
                     self.dispatcher.user_data[user_id]['wantsUpdate'] = pupils[str(user_id)]['wantsUpdate']
                     self.dispatcher.user_data[user_id]['days'] = pupils[str(user_id)]['days']
-        print(self.dispatcher.user_data)
         self.dispatcher.update_persistence()
