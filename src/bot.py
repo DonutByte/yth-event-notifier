@@ -23,9 +23,9 @@ import logging
 import json
 import time
 import os
-from creds import EXCEL_URL
+# from creds import EXCEL_URL
 
-# EXCEL_URL = os.environ['EXCEL_URL']
+EXCEL_URL = os.environ['EXCEL_URL']
 SUNDAY = 6
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -257,14 +257,14 @@ class Bot(Updater):
         self.job_queue.run_repeating(task_func, interval=interval)
 
     def run(self):
-        # self.start_webhook(listen='0.0.0.0',
-        #                    port=int(os.environ.get('PORT', '3333')),
-        #                    url_path=self.bot_token,
-        #                    webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
-        # self.idle()
-        self.job_queue.start()
-        self.start_polling(allowed_updates=[])
+        self.start_webhook(listen='0.0.0.0',
+                           port=int(os.environ.get('PORT', '3333')),
+                           url_path=self.bot_token,
+                           webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
         self.idle()
+        # self.job_queue.start()
+        # self.start_polling(allowed_updates=[])
+        # self.idle()
 
     @staticmethod
     def get_user_info(filepath) -> dict[str, dict]:

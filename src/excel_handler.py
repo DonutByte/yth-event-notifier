@@ -7,8 +7,8 @@ import requests
 import re
 import os
 
-from creds import EXCEL_URL
-# EXCEL_URL = os.environ['EXCEL_URL']
+# from creds import EXCEL_URL
+EXCEL_URL = os.environ['EXCEL_URL']
 DOWNLOAD_URL = f'{EXCEL_URL}/export?format=xlsx'
 
 
