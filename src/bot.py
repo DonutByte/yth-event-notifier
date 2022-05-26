@@ -1,4 +1,6 @@
+import datetime
 import threading
+from collections import defaultdict
 
 from telegram import ParseMode, ReplyKeyboardMarkup, Update
 from telegram.ext import (
@@ -21,13 +23,14 @@ import logging
 import json
 import time
 import os
+from creds import EXCEL_URL
 
-# from creds import EXCEL_URL
-EXCEL_URL = os.environ['EXCEL_URL']
+# EXCEL_URL = os.environ['EXCEL_URL']
+SUNDAY = 6
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 START, GRADE, WEEK = range(3)
@@ -77,9 +80,8 @@ def enforce_signup(func):
     return wrapper
 
 
-# TODO: update users when schedule has changed
-
 class Bot(Updater):
+    ISRAEL_TIMEZONE = pytz.timezone('Asia/Jerusalem')
     WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא',
                     2: 'עוד שבועיים', 3: 'עוד שלושה שבועות '}
     MAX_WEEK = 4
@@ -114,6 +116,8 @@ class Bot(Updater):
         self.save_users_filepath = user_info_filepath
         self.excel_handler = ExcelWorker(excel_path, self.update_interval)
         self.dispatcher.bot_data['admins'] = {admin_handler.MAINTAINER_ID}
+        self.dispatcher.bot_data['lastSchedule'] = {str(grade): events for grade, events in
+                                                    self.excel_handler.get_schedule(self.update_interval).items()}
 
         if not os.path.exists(user_info_filepath):
             with open(user_info_filepath, 'w') as f:
@@ -236,10 +240,10 @@ class Bot(Updater):
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
-        israel_timezone = pytz.timezone('Asia/Jerusalem')
         scheduler.add_job(lambda: self.update_all(
-            self.bot), trigger='cron', day_of_week='sun', hour='7', minute='00', timezone=israel_timezone)
-        scheduler.add_job(lambda : self.increment_grades, trigger='cron', month=9, day=1, hour='0', minute='0', timezone=israel_timezone)
+            self.bot), trigger='cron', hour='7', minute='00', timezone=self.ISRAEL_TIMEZONE)
+        scheduler.add_job(lambda: self.increment_grades(), trigger='cron', month=9, day=1, hour='00', minute='00',
+                          timezone=self.ISRAEL_TIMEZONE)
         scheduler.start()
 
     def add_handler(self, handler):
@@ -372,7 +376,8 @@ class Bot(Updater):
                 else:
                     update.message.reply_text("**אינך מקבל התרעות אוטומטיות**\n"
                                               "כדי לקבל: /restart או 'שחזר עדכון אוטומטי'",
-                                              parse_mode=ParseMode.MARKDOWN_V2, reply_markup=self.get_main_menu_labels(update, context))
+                                              parse_mode=ParseMode.MARKDOWN_V2,
+                                              reply_markup=self.get_main_menu_labels(update, context))
 
         return ConversationHandler.END
 
@@ -380,8 +385,8 @@ class Bot(Updater):
     def join_grade(self, update: Update, context: CallbackContext):
         grades = ','.join(map(lambda g: self.NUM_TO_GRADE[g], context.user_data["grade"]))
         context.user_data['lastMarkup'] = markup = ([grade for grade in self.GRADES_KEYBOARD
-                                                    if str(self.GRADES[grade[0]]) not in context.user_data["grade"]]
-                                                        + self.RETURN_OPTION)
+                                                     if str(self.GRADES[grade[0]]) not in context.user_data["grade"]]
+                                                    + self.RETURN_OPTION)
         update.message.reply_text(f'אתה בכית{"ה" if len(context.user_data["grade"]) == 1 else "ות"} {grades}'
                                   f'\nאם אתה רוצה להצטרף כיתה, בחר את הכיתה החדשה:\n'
                                   f"אם לא לחץ '{self.RETURN_OPTION[0][0]}'",
@@ -466,22 +471,34 @@ class Bot(Updater):
             grade = str(self.GRADES[update.message.text])
             context.user_data['grade'] = context.user_data['grade'].difference({grade})
         except ValueError:
-            update.message.reply_text(f'לא היית בכיתה {update.message.text}', reply_markup=self.get_main_menu_labels(update, context))
+            update.message.reply_text(f'לא היית בכיתה {update.message.text}',
+                                      reply_markup=self.get_main_menu_labels(update, context))
         else:
             del self.users[grade][user]
             update.message.reply_text(f'יצאת מכיתה {update.message.text} בהצלחה!\n'
-                                      'תוכל תמיד להצטרף שוב 🙂', reply_markup=self.get_main_menu_labels(update, context))
+                                      'תוכל תמיד להצטרף שוב 🙂',
+                                      reply_markup=self.get_main_menu_labels(update, context))
         return ConversationHandler.END
 
     @catch_errors
     def update_all(self, bot: telegram.Bot) -> None:
-        schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(self.update_interval)
+        schedule = self.excel_handler.get_schedule(self.update_interval)
+        day = datetime.datetime.now(self.ISRAEL_TIMEZONE)
         for grade, events in schedule.items():
-            for user_id, user_details in self.users[str(grade)].items():
+            grade_str = str(grade)
+            header = ''
+            if self.dispatcher.bot_data['lastSchedule'][grade_str] != schedule:
+                # TODO: bold out what has changed
+                header = '<b>*שימו ❤ הלוח השתנה!*</b>\n'
+            elif day.weekday() != SUNDAY:  # if schedule didn't change and it's not a sunday
+                continue
+
+            for user_id, user_details in self.users[grade_str].items():
                 if 'days' not in user_details or not user_details['wantsUpdate']:
                     continue
-                message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[str(grade)]}</b></u>\n\n' + self.format_schedule(
-                    events[:user_details['days'] // 7]) + self.DETAILS
+
+                message = (header + f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade_str]}</b></u>\n\n'
+                           + self.format_schedule(events[:user_details['days'] // 7]) + self.DETAILS)
                 try:
                     # TODO: add main menu keyboard
                     bot.send_message(chat_id=user_id, text=message, parse_mode=ParseMode.HTML,
@@ -495,8 +512,7 @@ class Bot(Updater):
     @enforce_signup
     def update_one(self, update: Update, context: CallbackContext):
         try:
-            schedule: dict[int, list[list[Event]]] = self.excel_handler.get_schedule(
-                self.update_interval)
+            schedule = self.excel_handler.get_schedule(self.update_interval)
         except RuntimeError as e:
             logger.exception(e)
             update.message.reply_text('חלה שגיאה, נסה שנית')
@@ -505,7 +521,8 @@ class Bot(Updater):
                 message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade]}</b></u>\n\n' + \
                           self.format_schedule(schedule[int(grade)][: context.user_data['days'] // 7]) \
                           + self.DETAILS
-                update.message.reply_html(text=message, disable_web_page_preview=True, reply_markup=self.get_main_menu_labels(update, context))
+                update.message.reply_html(text=message, disable_web_page_preview=True,
+                                          reply_markup=self.get_main_menu_labels(update, context))
                 context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
 
     def help(self, update: Update, context: CallbackContext):
@@ -584,12 +601,26 @@ class Bot(Updater):
     def increment_grades(self):
         updated = dict()
         for grade, pupils in self.users.items():
-            if grade in ('12', 'graduates'): # seniors will be graduates
+            if grade in ('12', 'graduates'):  # seniors will be graduates
                 continue
             updated[str(int(grade) + 1)] = pupils
 
         # reset freshmen
-        self.users['9'] = dict()
+        updated['9'] = dict()
         # add seniors to graduates
-        self.users['graduates'].update(self.users['12'])
+        updated['graduates'] = {**self.users['graduates'], **self.users['12']}
+        self.users = updated
+        # self.save_user_info()
 
+        # update user data
+        user_ids = {int(user_id) for users in self.users.values() for user_id in users}
+        for user_id in user_ids:
+            self.dispatcher.user_data[user_id] = defaultdict(self.dispatcher.context_types.user_data)
+            self.dispatcher.user_data[user_id]['grade'] = frozenset()
+            for grade, pupils in self.users.items():
+                if str(user_id) in pupils:
+                    self.dispatcher.user_data[user_id]['grade'] = {*self.dispatcher.user_data[user_id]['grade'], grade}
+                    self.dispatcher.user_data[user_id]['wantsUpdate'] = pupils[str(user_id)]['wantsUpdate']
+                    self.dispatcher.user_data[user_id]['days'] = pupils[str(user_id)]['days']
+        print(self.dispatcher.user_data)
+        self.dispatcher.update_persistence()
