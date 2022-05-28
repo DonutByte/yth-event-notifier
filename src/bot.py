@@ -489,7 +489,7 @@ class Bot(Updater):
         for grade, events in schedule.items():
             grade_str = str(grade)
             header = ''
-            if self.dispatcher.bot_data['lastSchedule'][grade_str] != schedule:
+            if self.dispatcher.bot_data['lastSchedule'][grade_str] != events:
                 # TODO: bold out what has changed
                 header = '<b>*שימו ❤ הלוח השתנה!*</b>\n'
             elif day.weekday() != SUNDAY:  # if schedule didn't change and it's not a sunday
@@ -520,9 +520,14 @@ class Bot(Updater):
             update.message.reply_text('חלה שגיאה, נסה שנית')
         else:
             for grade in context.user_data['grade']:
-                message = f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade]}</b></u>\n\n' + \
-                          self.format_schedule(schedule[int(grade)][: context.user_data['days'] // 7]) \
-                          + self.DETAILS
+                header = ''
+                if context.bot_data['lastSchedule'][grade] != schedule[int(grade)]:
+                    # TODO: bold out what has changed
+                    header = '<b>*שימו ❤ הלוח השתנה!*</b>\n'
+
+                message = (header + f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade]}</b></u>\n\n' +
+                           self.format_schedule(schedule[int(grade)][: context.user_data['days'] // 7]) + self.DETAILS)
+
                 update.message.reply_html(text=message, disable_web_page_preview=True,
                                           reply_markup=self.get_main_menu_labels(update, context))
                 context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
