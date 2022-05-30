@@ -490,8 +490,9 @@ class Bot(Updater):
             grade_str = str(grade)
             header = ''
             if self.dispatcher.bot_data['lastSchedule'][grade_str] != events:
-                # TODO: bold out what has changed
-                header = '<b>*שימו ❤ הלוח השתנה!*</b>\n'
+                if day.weekday() != SUNDAY:
+                    # TODO: bold out what has changed
+                    header = '<b>*שימו ❤ הלוח השתנה!*</b>\n'
                 self.dispatcher.bot_data['lastSchedule'][grade_str] = events    # save new schedule
             elif day.weekday() != SUNDAY:  # if schedule didn't change and it's not a sunday
                 continue
