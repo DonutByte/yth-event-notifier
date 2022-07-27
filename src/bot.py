@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 START, GRADE, WEEK = range(3)
 NAME_TO_ID, GET_MESSAGE, BROADCAST_MESSAGE = range(3)
-
+SUMMER_START = datetime.datetime(2000, 6, 20)
+SUMMER_END = datetime.datetime(2000, 9, 1)
 
 def catch_errors(func):
     def wrapper(self, *args):
@@ -486,19 +487,24 @@ class Bot(Updater):
     def update_all(self, bot: telegram.Bot) -> None:
         schedule = self.excel_handler.get_schedule(self.update_interval)
         day = datetime.datetime.now(self.ISRAEL_TIMEZONE)
+        SUMMER_START.replace(day.year)
+        SUMMER_END.replace(day.year)
         for grade, events in schedule.items():
+            if (not events) and SUMMER_START < day < SUMMER_END:  # no events and is in summer vacation
+                continue
+
             grade_str = str(grade)
             header = ''
             if self.dispatcher.bot_data['lastSchedule'][grade_str] != events:
+                self.dispatcher.bot_data['lastSchedule'][grade_str] = events  # save new schedule
                 if day.weekday() != SUNDAY:
                     # TODO: bold out what has changed
                     header = '<b>*שימו ❤ הלוח השתנה!*</b>\n'
-                self.dispatcher.bot_data['lastSchedule'][grade_str] = events    # save new schedule
             elif day.weekday() != SUNDAY:  # if schedule didn't change and it's not a sunday
                 continue
 
             for user_id, user_details in self.users[grade_str].items():
-                if 'days' not in user_details or not user_details['wantsUpdate']:
+                if 'days' not in user_details or not user_details.get('wantsUpdate'):
                     continue
 
                 message = (header + f'<u><b>לוח מבחנים של כיתה {self.NUM_TO_GRADE[grade_str]}</b></u>\n\n'

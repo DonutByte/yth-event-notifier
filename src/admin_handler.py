@@ -10,14 +10,14 @@ from telegram.ext.utils.types import CCT
 from collections import defaultdict
 import inspect
 
-
 TELEGRAM_HANDLER = Handler[Update, CCT]
 USED_NUMS = {10, 11, 12}
 ADMIN_FUNCTIONS, ADD, REMOVE = USED_NUMS
 BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
 MAINTAINER_ID = 640360349
 
-def enforce_admin(*, fallback: TELEGRAM_HANDLER):
+
+def enforce_admin(*, fallback):
     def decorator(handler):
         if inspect.ismethod(handler):
             handler.__func__.enforce_admin = ...
@@ -31,6 +31,7 @@ def enforce_admin(*, fallback: TELEGRAM_HANDLER):
             return handler(update, context)
 
         return wrapper
+
     return decorator
 
 
@@ -49,7 +50,7 @@ def admin_menu(button_labels, *, fallback: TELEGRAM_HANDLER):
     return wrapper
 
 
-def get_new_admin(update: Update, context: CallbackContext):
+def get_new_admin(update: Update, _: CallbackContext):
     update.message.reply_text('הזן יוזר-אידי של המשתמש שתרצה לקדם כאדמין:')
     return ADD
 
@@ -60,7 +61,8 @@ def add_admin(update: Update, context: CallbackContext):
     update.message.reply_text('המשתמש עכשיו אדמין', reply_markup=ReplyKeyboardMarkup(markup))
     return ADMIN_FUNCTIONS
 
-def get_admin_id(update: Update, context: CallbackContext):
+
+def get_admin_id(update: Update, _: CallbackContext):
     update.message.reply_text('הזן יוזר-אידי של המשתמש שתרצה למחוק כאדמין:')
     return REMOVE
 
@@ -89,6 +91,7 @@ def create_admin_menu(*,
                       **kwargs) -> ConversationHandler:
     """
     creates basic admin menu and adds custom handlers to it
+    :param unhandled_message_handler: the handler to call when theres an unhandled message
     :param additional_states: the custom handlers
     :param menu_button_labels: list of labels used in the custom handlers (will show up in keyboard)
     :param fallbacks: the ConversationHandler fallback
@@ -105,19 +108,19 @@ def create_admin_menu(*,
     states = {
         ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^הוספת אדמין$'), get_new_admin),
                           MessageHandler(Filters.regex('^מחיקת אדמין$'), get_admin_id)]
-                         + additional_states.pop(ADMIN_FUNCTIONS),
+                          + additional_states.pop(ADMIN_FUNCTIONS),
 
-        ADD: [MessageHandler(Filters.regex('\d{6,10}'), add_admin)],
-        REMOVE: [MessageHandler(Filters.regex('\d{6,10}'), remove_admin)],
+        ADD: [MessageHandler(Filters.regex(r'\d{6,10}'), add_admin)],
+        REMOVE: [MessageHandler(Filters.regex(r'\d{6,10}'), remove_admin)],
         **additional_states
     }
     enforced_admin_states = defaultdict(lambda: [])
     for key, handlers in states.items():
         for handler in handlers:
             callback = handler.callback
-            handler.callback = ( callback
-                                 if hasattr(callback, 'enforce_admin')
-                                 else enforce_admin(fallback=unhandled_message_handler)(callback) )
+            handler.callback = (callback
+                                if hasattr(callback, 'enforce_admin')
+                                else enforce_admin(fallback=unhandled_message_handler)(callback))
             enforced_admin_states[key].append(handler)
 
     return ConversationHandler(
