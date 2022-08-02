@@ -7,8 +7,8 @@ import requests
 import re
 import os
 
-# from creds import EXCEL_URL
-EXCEL_URL = os.environ['EXCEL_URL']
+from creds import EXCEL_URL
+# EXCEL_URL = os.environ['EXCEL_URL']
 DOWNLOAD_URL = f'{EXCEL_URL}/export?format=xlsx'
 
 
@@ -122,6 +122,10 @@ class ExcelWorker:
         row = self.get_this_week_row()
         for grade in self.GRADES:
             self.schedule[grade] = []
+
+        if row is None:
+            return
+
         for grade in self.GRADES:
             for week_interval in intervals:
                 self.schedule[grade].append(

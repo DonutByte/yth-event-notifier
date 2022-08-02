@@ -23,9 +23,9 @@ import logging
 import json
 import time
 import os
-# from creds import EXCEL_URL
+from creds import EXCEL_URL
 
-EXCEL_URL = os.environ['EXCEL_URL']
+# EXCEL_URL = os.environ['EXCEL_URL']
 SUNDAY = 6
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,10 +33,11 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
+ISRAEL_TIMEZONE = pytz.timezone('Asia/Jerusalem')
 START, GRADE, WEEK = range(3)
 NAME_TO_ID, GET_MESSAGE, BROADCAST_MESSAGE = range(3)
-SUMMER_START = datetime.datetime(2000, 6, 20)
-SUMMER_END = datetime.datetime(2000, 9, 1)
+SUMMER_START = datetime.datetime(2000, 6, 20, tzinfo=ISRAEL_TIMEZONE)
+SUMMER_END = datetime.datetime(2000, 9, 1, tzinfo=ISRAEL_TIMEZONE)
 
 def catch_errors(func):
     def wrapper(self, *args):
@@ -63,7 +64,7 @@ def enforce_signup(func):
             try:
                 to_return = func(self, update, context)
             except Exception as e:
-                logger.error(f'{func.__name__} raised an exception "{e}"')
+                logger.exception(e)
                 message = f'חלה שגיאה\nאם הודעה זו נשלחת כמה פעמים פנה ל' \
                           f'<a href="tg://user?id={admin_handler.MAINTAINER_ID}">מנהל הבוט</a>'
                 if update.message:
@@ -82,7 +83,6 @@ def enforce_signup(func):
 
 
 class Bot(Updater):
-    ISRAEL_TIMEZONE = pytz.timezone('Asia/Jerusalem')
     WEEKS_FORMAT = {0: 'שבוע הזה', 1: 'שבוע הבא',
                     2: 'עוד שבועיים', 3: 'עוד שלושה שבועות '}
     MAX_WEEK = 4
@@ -151,15 +151,16 @@ class Bot(Updater):
         cancel = [CommandHandler('cancel', self.cancel), MessageHandler(
             Filters.regex('^🔙חזור$'), self.cancel)]
 
-        unknown = MessageHandler(~ (Filters.regex(r'\/cancel') | Filters.regex('^🔙חזור$')), self.unknown_message)
+        not_return = ~ (Filters.regex(r'\/cancel') | Filters.regex('^🔙חזור$'))
+        unknown = [MessageHandler(not_return & Filters.command, self.unhandled_command), MessageHandler(not_return, self.unknown_message)]
 
         setup_handler = ConversationHandler(
             entry_points=start,
             states={
                 START: start,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade), unknown],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.grade), *unknown],
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות') ^ Filters.regex(
-                    '^לא ארצה עדכון אוטומטי$'), self.week), unknown],
+                    '^לא ארצה עדכון אוטומטי$'), self.week), *unknown],
             },
             fallbacks=cancel,
             persistent=True,
@@ -170,7 +171,7 @@ class Bot(Updater):
             entry_points=join_grade,
             states={
                 START: join_grade,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.join_grade_callback), unknown],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.join_grade_callback), *unknown],
             },
             fallbacks=cancel,
             persistent=True,
@@ -182,7 +183,7 @@ class Bot(Updater):
             entry_points=leave_grade,
             states={
                 START: leave_grade,
-                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.leave_grade_callback), unknown],
+                GRADE: [MessageHandler(Filters.regex('|'.join(self.GRADES)), self.leave_grade_callback), *unknown],
             },
             fallbacks=cancel,
             persistent=True,
@@ -195,7 +196,7 @@ class Bot(Updater):
             states={
                 START: week,
                 WEEK: [MessageHandler(Filters.regex(f'[{self.MIN_WEEK}-{self.MAX_WEEK}] שבוע/ות|לא ארצה עדכון אוטומטי'),
-                                      self.week), unknown],
+                                      self.week), *unknown],
             },
             fallbacks=cancel,
             persistent=True,
@@ -207,20 +208,20 @@ class Bot(Updater):
             additional_states={
                 admin_handler.ADMIN_FUNCTIONS: [MessageHandler(Filters.regex('^שם ליוזר-אידי$'), self.get_name),
                                                 MessageHandler(Filters.regex('^שלח עדכון$'), self.get_grade),
-                                                unknown],
+                                                *unknown],
                 NAME_TO_ID: [MessageHandler(Filters.text
                                             & ~Filters.command
                                             & ~Filters.regex(self.RETURN_OPTION[0][0]), self.name_to_user_id),
-                             unknown],
-                GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(list(self.GRADES.keys()) + ['כולם'])),
-                                             self.get_message), unknown],
+                             *unknown],
+                GET_MESSAGE: [MessageHandler(Filters.regex('|'.join(list(self.GRADES.keys()) + ['כולם', 'בוגרים'])),
+                                             self.get_message), *unknown],
                 BROADCAST_MESSAGE: [MessageHandler(~Filters.command
                                                    & ~Filters.regex(self.RETURN_OPTION[0][0]),
-                                                   self.broadcast_message), unknown],
+                                                   self.broadcast_message), *unknown],
             },
             menu_button_labels=['שם ליוזר-אידי', 'שלח עדכון', self.RETURN_OPTION[0][0]],
             fallbacks=cancel,
-            unhandled_message_handler=self.unknown_message,
+            unhandled_message_handlers=unknown,
             run_async=True,
             persistent=True,
             name='admin menu conv',
@@ -237,14 +238,14 @@ class Bot(Updater):
         self.add_handler(update)
 
         self.add_handler(MessageHandler(
-            Filters.text, self.unknown_message))
+            Filters.all, self.unknown_message_main_menu))
 
         # update_all scheduler
         scheduler = BackgroundScheduler()
         scheduler.add_job(lambda: self.update_all(
-            self.bot), trigger='cron', hour='7', minute='00', timezone=self.ISRAEL_TIMEZONE)
+            self.bot), trigger='cron', hour='7', minute='00', timezone=ISRAEL_TIMEZONE)
         scheduler.add_job(lambda: self.increment_grades(), trigger='cron', month=9, day=1, hour='00', minute='00',
-                          timezone=self.ISRAEL_TIMEZONE)
+                          timezone=ISRAEL_TIMEZONE)
         scheduler.start()
 
     def add_handler(self, handler):
@@ -258,23 +259,23 @@ class Bot(Updater):
         self.job_queue.run_repeating(task_func, interval=interval)
 
     def run(self):
-        self.start_webhook(listen='0.0.0.0',
-                           port=int(os.environ.get('PORT', '3333')),
-                           url_path=self.bot_token,
-                           webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
-        self.idle()
-        # self.job_queue.start()
-        # self.start_polling(allowed_updates=[])
+        # self.start_webhook(listen='0.0.0.0',
+        #                    port=int(os.environ.get('PORT', '3333')),
+        #                    url_path=self.bot_token,
+        #                    webhook_url=f'https://yth-event-notifier-production.up.railway.app/{self.bot_token}')
         # self.idle()
+        self.job_queue.start()
+        self.start_polling(allowed_updates=[])
+        self.idle()
 
     @staticmethod
     def get_user_info(filepath) -> dict[str, dict]:
-        with open(filepath) as f:
+        with open(filepath, encoding='utf-8') as f:
             return json.load(f)
 
     def save_user_info(self):
-        with open(self.save_users_filepath, 'w') as f:
-            json.dump(self.users, f, indent=4)
+        with open(self.save_users_filepath, 'w', encoding='utf-8') as f:
+            json.dump(self.users, f, indent=4, ensure_ascii=False)
 
     def get_main_menu_labels(self, update: Update, context: CallbackContext):
         if not any(str(update.effective_user.id) in ids for grades in self.users for ids in self.users[grades].keys()):
@@ -324,7 +325,7 @@ class Bot(Updater):
             return GRADE
         else:
             markup = context.user_data['lastMarkup'] = self.WEEKS_KEYBOARD
-            update.message.reply_text(text=f'בחרת בכיתה {update.message.text} עוד מעט תוכל להצטרף לעוד כיתות\n'
+            update.message.reply_text(text=f'בחרתם בכיתה {update.message.text} עוד מעט תוכלו להצטרף לעוד כיתות\n'
                                            f'אבל לפני שתוכל, הבוט ישלח כל יום ראשון ב7:00 לו"ז של השבועות הבאים (עפ"י '
                                            f'בחירתכם)\nכמה שבועות תרצו לראות מראש?',
                                       reply_markup=ReplyKeyboardMarkup(markup, one_time_keyboard=True))
@@ -426,18 +427,26 @@ class Bot(Updater):
         return ConversationHandler.END
 
     def unknown_message(self, update: Update, context: CallbackContext):
-        update.message.reply_text(f"לא הבנתי\nבבקשה תשתמש בכפתורים\n",
+        update.message.reply_text(f"לא הבנתי\nבבקשה תשתמש בכפתורים\nכדי לצאת בחזרה לתפריט הראשי /cancel",
                                   parse_mode=ParseMode.MARKDOWN_V2,
+                                  reply_markup=ReplyKeyboardMarkup(context.user_data['lastMarkup']))
+
+    def unhandled_command(self, update: Update, context: CallbackContext):
+        update.message.reply_text(f'הפקודה הזו לא נתמכת כאן.\n'
+                                  f'נסה לצאת קודם לתפריט הראשי ע"י /cancel או \'{self.RETURN_OPTION[0][0]}\'',
+                                  reply_markup=ReplyKeyboardMarkup(context.user_data['lastMarkup']))
+
+    def unknown_message_main_menu(self, update: Update, context: CallbackContext):
+        update.message.reply_text('לא הבנתי\nבבקשה תשתמש בכפתורים',
                                   reply_markup=ReplyKeyboardMarkup(context.user_data['lastMarkup']))
 
     def join_grade_callback(self, update: Update, context: CallbackContext):
         user = str(update.effective_user.id)
 
         # get a grade - if there's one
+        prev_grade = None
         if 'grade' in context.user_data and context.user_data['grade']:
             prev_grade, *_ = context.user_data['grade']
-        else:
-            prev_grade = None
 
         try:
             if 'grade' not in context.user_data or not context.user_data['grade']:
@@ -446,23 +455,25 @@ class Bot(Updater):
             grade = str(self.GRADES[update.message.text])
             context.user_data['grade'] = context.user_data['grade'].union({grade})
         except KeyError:
-            if prev_grade is None:
-                context.user_data['lastMarkup'] = markup = self.GRADES_KEYBOARD
-                update.message.reply_text('הכיתה שבחרת לא קיימת, בבקשה תשתמש בכפתורים',
-                                          reply_markup=ReplyKeyboardMarkup(markup, one_time_keyboard=True))
-            else:
-                context.user_data['lastMarkup'] = markup = self.GRADES_KEYBOARD + self.RETURN_OPTION
-                update.message.reply_text(f"כיתה שבחרת לא קיימת\nאם לא תרצה לשנות לחץ '{self.RETURN_OPTION[0][0]}'",
-                                          reply_markup=ReplyKeyboardMarkup(markup, one_time_keyboard=True))
-
+            context.user_data['lastMarkup'] = markup = self.GRADES_KEYBOARD + self.RETURN_OPTION
+            update.message.reply_text(f"כיתה שבחרת לא קיימת\nאם לא תרצה לשנות לחץ '{self.RETURN_OPTION[0][0]}'",
+                                      reply_markup=ReplyKeyboardMarkup(markup, one_time_keyboard=True))
             return GRADE
         else:
-            if prev_grade is not None:
+            if prev_grade is None:
+                # add user to grade
+                # setting days to 21 as default
+                self.users[grade][user] = {}
+                self.users[grade][user]['wantsUpdate'] = True
+                self.users[grade][user]['days'] = 21
+                self.users[grade][user]['name'] = update.effective_user.full_name
+            else:
+                # copy user's data to new grade
                 self.users[grade][user] = self.users[prev_grade][user]
-                self.save_user_info()
-                context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
-                update.message.reply_text(
-                    'הכיתה הוספה בהצלחה!', reply_markup=self.get_main_menu_labels(update, context))
+            self.save_user_info()
+            context.user_data['lastMarkup'] = self.get_main_menu_labels(update, context).keyboard
+            update.message.reply_text(
+                'הכיתה הוספה בהצלחה!', reply_markup=self.get_main_menu_labels(update, context))
 
         return ConversationHandler.END
 
@@ -473,11 +484,11 @@ class Bot(Updater):
         try:
             grade = str(self.GRADES[update.message.text])
             context.user_data['grade'] = context.user_data['grade'].difference({grade})
-        except ValueError:
+            del self.users[grade][user]
+        except KeyError:
             update.message.reply_text(f'לא היית בכיתה {update.message.text}',
                                       reply_markup=self.get_main_menu_labels(update, context))
         else:
-            del self.users[grade][user]
             update.message.reply_text(f'יצאת מכיתה {update.message.text} בהצלחה!\n'
                                       'תוכל תמיד להצטרף שוב 🙂',
                                       reply_markup=self.get_main_menu_labels(update, context))
@@ -486,11 +497,11 @@ class Bot(Updater):
     @catch_errors
     def update_all(self, bot: telegram.Bot) -> None:
         schedule = self.excel_handler.get_schedule(self.update_interval)
-        day = datetime.datetime.now(self.ISRAEL_TIMEZONE)
-        SUMMER_START.replace(day.year)
-        SUMMER_END.replace(day.year)
+        day = datetime.datetime.now(ISRAEL_TIMEZONE)
+        summer_start = SUMMER_START.replace(day.year, tzinfo=ISRAEL_TIMEZONE)
+        summer_end = SUMMER_END.replace(day.year, tzinfo=ISRAEL_TIMEZONE)
         for grade, events in schedule.items():
-            if (not events) and SUMMER_START < day < SUMMER_END:  # no events and is in summer vacation
+            if (not events) and summer_start < day < summer_end:  # no events and is in summer vacation
                 continue
 
             grade_str = str(grade)
@@ -584,7 +595,7 @@ class Bot(Updater):
         return admin_handler.ADMIN_FUNCTIONS
 
     def get_grade(self, update: Update, context: CallbackContext):
-        context.user_data['lastMarkup'] = markup = [[choice] for choice in (['כולם'] + list(self.GRADES.keys()))]
+        context.user_data['lastMarkup'] = markup = [[choice] for choice in (['כולם'] + list(self.GRADES.keys()) + ['בוגרים'])]
         update.message.reply_text('בחר את הכיתה אליה תרצה לשלוח עדכון:',
                                   reply_markup=ReplyKeyboardMarkup(markup))
         return GET_MESSAGE
@@ -592,15 +603,17 @@ class Bot(Updater):
     def get_message(self, update: Update, context: CallbackContext):
         context.user_data['sentTo'] = update.message.text
         update.message.reply_text(('שלח הודעה שתרצה להודיע ל' +
-                                   ('כיתה ' if update.message.text != 'כולם' else '') + update.message.text))
+                                   ('כיתה ' if update.message.text not in ['כולם', 'בוגרים'] else '') + update.message.text))
         return BROADCAST_MESSAGE
 
     def broadcast_message(self, update: Update, context: CallbackContext):
-        if context.user_data['sentTo'] == 'כולם':
+        send_to = context.user_data['sentTo']
+        if send_to == 'כולם':
             # set makes sure user doesn't get message twice
-            ids = {user_id for users in self.users.values() for user_id in users}
+            ids = {user_id for grade, users in self.users.items() for user_id in users if grade != 'graduates'}
         else:
-            ids = self.users[str(self.GRADES[context.user_data['sentTo']])].keys()
+            key = 'graduates' if send_to == 'בוגרים' else str(self.GRADES[send_to])
+            ids = self.users[key].keys()
         for user_id in ids:
             try:
                 context.bot.copy_message(user_id, update.effective_chat.id, update.effective_message.message_id)

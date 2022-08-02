@@ -17,7 +17,7 @@ BUTTON_LABELS = ['הוספת אדמין', 'מחיקת אדמין']
 MAINTAINER_ID = 640360349
 
 
-def enforce_admin(*, fallback):
+def enforce_admin(*, fallbacks: list[TELEGRAM_HANDLER]):
     def decorator(handler):
         if inspect.ismethod(handler):
             handler.__func__.enforce_admin = ...
@@ -26,8 +26,11 @@ def enforce_admin(*, fallback):
 
         def wrapper(update: Update, context: CallbackContext):
             if update.effective_user.id not in context.bot_data['admins']:
-                fallback(update, context)
-                return ConversationHandler.END
+                for fallback in fallbacks:
+                    obj = fallback.check_update(update)
+                    if obj:
+                        fallback.handle_update(update, context.dispatcher, obj, context)
+                    return ConversationHandler.END
             return handler(update, context)
 
         return wrapper
@@ -35,12 +38,12 @@ def enforce_admin(*, fallback):
     return decorator
 
 
-def admin_menu(button_labels, *, fallback: TELEGRAM_HANDLER):
+def admin_menu(button_labels, *, fallbacks: list[TELEGRAM_HANDLER]):
     global BUTTON_LABELS
     BUTTON_LABELS.extend(button_labels)
     BUTTON_LABELS = [[label] for label in BUTTON_LABELS]
 
-    @enforce_admin(fallback=fallback)
+    @enforce_admin(fallbacks=fallbacks)
     def wrapper(update: Update, context: CallbackContext):
         markup = context.user_data['lastMarkup'] = BUTTON_LABELS
         update.message.reply_text('תפריט מנהלים\nמה תרצה לעשות?',
@@ -87,11 +90,11 @@ def create_admin_menu(*,
                       additional_states: dict[int, list[TELEGRAM_HANDLER]],
                       menu_button_labels: list[str],
                       fallbacks: list[TELEGRAM_HANDLER],
-                      unhandled_message_handler: TELEGRAM_HANDLER,
+                      unhandled_message_handlers: list[TELEGRAM_HANDLER],
                       **kwargs) -> ConversationHandler:
     """
     creates basic admin menu and adds custom handlers to it
-    :param unhandled_message_handler: the handler to call when theres an unhandled message
+    :param unhandled_message_handlers: the handler to call when theres an unhandled message
     :param additional_states: the custom handlers
     :param menu_button_labels: list of labels used in the custom handlers (will show up in keyboard)
     :param fallbacks: the ConversationHandler fallback
@@ -120,12 +123,12 @@ def create_admin_menu(*,
             callback = handler.callback
             handler.callback = (callback
                                 if hasattr(callback, 'enforce_admin')
-                                else enforce_admin(fallback=unhandled_message_handler)(callback))
+                                else enforce_admin(fallbacks=unhandled_message_handlers)(callback))
             enforced_admin_states[key].append(handler)
 
     return ConversationHandler(
         entry_points=[MessageHandler(Filters.regex('^תפריט מנהלים$'), admin_menu(menu_button_labels,
-                                                                                 fallback=unhandled_message_handler))],
+                                                                                 fallbacks=unhandled_message_handlers))],
         states=enforced_admin_states,
         fallbacks=fallbacks,
         **kwargs

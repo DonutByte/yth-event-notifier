@@ -4,9 +4,9 @@ from telegram.ext import dispatcher
 from bot import Bot
 import os
 
-# from creds import BOT_TOKEN
+from creds import BOT_TOKEN
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", None)
+# BOT_TOKEN = os.environ.get("BOT_TOKEN", None)
 
 warnings.filterwarnings(
     action='ignore',
